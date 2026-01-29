@@ -16,6 +16,8 @@ struct FocusManager {
             focusedNode = nil
             return
         }
+
+        focusedNode?.isFocused = false // Clear focus on the previous node
         focusedIndex = min(focusedIndex, focusables.count - 1)
         focusedNode = focusables[focusedIndex]
         focusedNode?.isFocused = true

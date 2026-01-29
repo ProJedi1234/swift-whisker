@@ -16,8 +16,8 @@ final class NodeViewBuilder {
             buildHStackNode(node, content: hstack._content, alignment: hstack._alignment, spacing: hstack._spacing)
         } else if let zstack = view as? any _ZStackProtocol {
             buildZStackNode(node, content: zstack._content, alignment: zstack._alignment)
-        } else if view is Spacer {
-            buildSpacerNode(node, spacer: view as! Spacer)
+        } else if let spacer = view as? Spacer {
+            buildSpacerNode(node, spacer: spacer)
         } else if view is Divider {
             buildDividerNode(node)
         } else if let textField = view as? TextField {
