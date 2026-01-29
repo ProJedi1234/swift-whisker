@@ -7,8 +7,6 @@ public protocol View {
     var body: Body { get }
 }
 
-// MARK: - Never as View (for primitives)
-
 extension Never: View {
     public typealias Body = Never
 
@@ -17,54 +15,44 @@ extension Never: View {
     }
 }
 
-// MARK: - ViewBuilder
-
 @resultBuilder
 public struct ViewBuilder {
-    // Empty
     public static func buildBlock() -> EmptyView {
         EmptyView()
     }
 
-    // Single view
     public static func buildBlock<V: View>(_ content: V) -> V {
         content
     }
 
-    // Two views
     public static func buildBlock<V0: View, V1: View>(
         _ v0: V0, _ v1: V1
     ) -> TupleView<(V0, V1)> {
         TupleView((v0, v1))
     }
 
-    // Three views
     public static func buildBlock<V0: View, V1: View, V2: View>(
         _ v0: V0, _ v1: V1, _ v2: V2
     ) -> TupleView<(V0, V1, V2)> {
         TupleView((v0, v1, v2))
     }
 
-    // Four views
     public static func buildBlock<V0: View, V1: View, V2: View, V3: View>(
         _ v0: V0, _ v1: V1, _ v2: V2, _ v3: V3
     ) -> TupleView<(V0, V1, V2, V3)> {
         TupleView((v0, v1, v2, v3))
     }
 
-    // Five views
     public static func buildBlock<V0: View, V1: View, V2: View, V3: View, V4: View>(
         _ v0: V0, _ v1: V1, _ v2: V2, _ v3: V3, _ v4: V4
     ) -> TupleView<(V0, V1, V2, V3, V4)> {
         TupleView((v0, v1, v2, v3, v4))
     }
 
-    // Optionals
     public static func buildOptional<V: View>(_ component: V?) -> V? {
         component
     }
 
-    // Conditionals
     public static func buildEither<TrueView: View, FalseView: View>(
         first component: TrueView
     ) -> ConditionalView<TrueView, FalseView> {
@@ -77,8 +65,6 @@ public struct ViewBuilder {
         .falseView(component)
     }
 }
-
-// MARK: - Supporting Types
 
 /// Internal protocol so Application can unwrap any TupleView<T> regardless of T
 protocol _TupleViewProtocol {
@@ -101,8 +87,19 @@ public struct TupleView<T>: View, _TupleViewProtocol {
     }
 }
 
+/// Internal protocol so NodeViewBuilder can detect any ConditionalView regardless of generic parameters
+protocol _ConditionalViewProtocol {
+    var _activeView: any View { get }
+}
+
 /// Represents an if/else in ViewBuilder
-public enum ConditionalView<TrueView: View, FalseView: View>: View {
+public enum ConditionalView<TrueView: View, FalseView: View>: View, _ConditionalViewProtocol {
+    var _activeView: any View {
+        switch self {
+        case .trueView(let view): return view
+        case .falseView(let view): return view
+        }
+    }
     case trueView(TrueView)
     case falseView(FalseView)
 

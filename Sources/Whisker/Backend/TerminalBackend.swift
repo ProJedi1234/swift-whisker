@@ -81,39 +81,16 @@ public struct RenderCommand: Sendable {
 
 /// Protocol for terminal I/O backends
 public protocol TerminalBackend: AnyObject, Sendable {
-    /// Current render mode (fullscreen vs inline)
     var renderMode: RenderMode { get set }
-
-    /// Current terminal size in cells
     var size: Size { get }
 
-    /// Stream of input events
-    func events() -> AsyncStream<TerminalEvent>
-
-    /// Write render commands to the terminal
     func write(_ commands: [RenderCommand])
-
-    /// Write a raw string directly to the output buffer
     func writeRaw(_ string: String)
-
-    /// Flush the output buffer
     func flush()
-
-    /// Set up the terminal (raw mode, alternate screen, etc.)
     func setup() throws
-
-    /// Restore the terminal to its original state
     func teardown()
-
-    /// Move cursor to position
     func moveCursor(to position: Position)
-
-    /// Show or hide the cursor
     func setCursorVisible(_ visible: Bool)
-
-    /// Clear the entire screen
     func clearScreen()
-
-    /// Move up N lines and erase them (for inline re-rendering)
     func clearLines(_ count: Int)
 }

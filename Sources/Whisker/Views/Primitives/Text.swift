@@ -19,8 +19,6 @@ public struct Text: View {
         fatalError("Text has no body")
     }
 
-    // MARK: - Modifiers (return new Text with modified style)
-
     public func foregroundColor(_ color: Color) -> Text {
         var copy = self
         copy.style.foreground = color
@@ -52,8 +50,6 @@ public struct Text: View {
     }
 }
 
-// MARK: - Text concatenation
-
 extension Text {
     public static func + (lhs: Text, rhs: Text) -> Text {
         // For now, just concatenate content. A full implementation would
@@ -62,15 +58,11 @@ extension Text {
     }
 }
 
-// MARK: - ExpressibleByStringLiteral
-
 extension Text: ExpressibleByStringLiteral {
     public init(stringLiteral value: String) {
         self.init(value)
     }
 }
-
-// MARK: - ExpressibleByStringInterpolation
 
 extension Text: ExpressibleByStringInterpolation {
     public init(stringInterpolation: DefaultStringInterpolation) {

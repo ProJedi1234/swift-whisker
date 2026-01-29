@@ -16,16 +16,12 @@ public enum Color: Equatable, Sendable {
     /// True color (24-bit RGB)
     case rgb(UInt8, UInt8, UInt8)
 
-    // MARK: - Convenience initializers
-
     public static func hex(_ hex: UInt32) -> Color {
         let r = UInt8((hex >> 16) & 0xFF)
         let g = UInt8((hex >> 8) & 0xFF)
         let b = UInt8(hex & 0xFF)
         return .rgb(r, g, b)
     }
-
-    // MARK: - Common colors
 
     public static let gray = Color.ansi256(244)
     public static let darkGray = Color.ansi256(238)
@@ -36,8 +32,6 @@ public enum Color: Equatable, Sendable {
     public static let purple = Color.ansi256(129)
     public static let teal = Color.ansi256(30)
 }
-
-// MARK: - ANSI Escape Sequences
 
 extension Color {
     /// ANSI escape sequence for foreground color

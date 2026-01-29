@@ -1,7 +1,5 @@
 import Foundation
 
-// MARK: - Layout Protocol
-
 /// Protocol for types that can compute layout
 public protocol Layout {
     /// Calculate the size this layout needs given constraints and children
@@ -29,24 +27,13 @@ public struct LayoutChild {
 
     /// Calculate preferred size for this child
     public func sizeThatFits(_ proposal: ProposedSize) -> Size {
-        // Use cached size if available and not dirty
-        if let cached = node.cachedSize, !node.needsLayout {
-            return cached
-        }
-
-        // If node has a custom layout, use it
         if let layoutFn = node.layout {
             let (size, _) = layoutFn(proposal, node.children)
-            node.cachedSize = size
             return size
         }
-
-        // Default: return zero (leaf nodes override via sizeThatFits)
         return .zero
     }
 }
-
-// MARK: - VStack Layout
 
 public struct VStackLayout: Layout {
     public let alignment: HorizontalAlignment
@@ -105,8 +92,6 @@ public struct VStackLayout: Layout {
     }
 }
 
-// MARK: - HStack Layout
-
 public struct HStackLayout: Layout {
     public let alignment: VerticalAlignment
     public let spacing: Int
@@ -163,8 +148,6 @@ public struct HStackLayout: Layout {
         }
     }
 }
-
-// MARK: - ZStack Layout
 
 public struct ZStackLayout: Layout {
     public let alignment: Alignment

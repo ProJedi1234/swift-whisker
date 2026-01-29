@@ -4,7 +4,6 @@ import Foundation
 public final class TestBackend: TerminalBackend, @unchecked Sendable {
     private var _size: Size
     private var cells: [[Cell]]
-    private var eventContinuation: AsyncStream<TerminalEvent>.Continuation?
     public private(set) var cursorPosition: Position = .zero
     public private(set) var cursorVisible: Bool = true
     public var renderMode: RenderMode = .fullscreen
@@ -17,15 +16,7 @@ public final class TestBackend: TerminalBackend, @unchecked Sendable {
         )
     }
 
-    // MARK: - TerminalBackend
-
     public var size: Size { _size }
-
-    public func events() -> AsyncStream<TerminalEvent> {
-        AsyncStream { continuation in
-            self.eventContinuation = continuation
-        }
-    }
 
     public func write(_ commands: [RenderCommand]) {
         for cmd in commands {
@@ -71,13 +62,6 @@ public final class TestBackend: TerminalBackend, @unchecked Sendable {
         // No-op for test backend
     }
 
-    // MARK: - Test Helpers
-
-    /// Inject an event (for testing input handling)
-    public func injectEvent(_ event: TerminalEvent) {
-        eventContinuation?.yield(event)
-    }
-
     /// Get the cell at a position
     public func cell(at position: Position) -> Cell? {
         guard position.y >= 0 && position.y < _size.height &&
@@ -105,13 +89,11 @@ public final class TestBackend: TerminalBackend, @unchecked Sendable {
         cells
     }
 
-    /// Resize the terminal (triggers resize event)
     public func resize(to newSize: Size) {
         _size = newSize
         cells = Array(
             repeating: Array(repeating: Cell.empty, count: newSize.width),
             count: newSize.height
         )
-        eventContinuation?.yield(.resize(newSize))
     }
 }

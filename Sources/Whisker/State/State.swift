@@ -1,14 +1,16 @@
 import Foundation
 
-/// Context for the current node being built
+/// Context for the current node being built.
+/// Thread-safety: NodeContext.current is only accessed from the main thread
+/// during the synchronous rebuild pass in Application.runLoop(). No locking
+/// is required because the entire build/layout/render pipeline is single-threaded.
 public enum NodeContext {
-    /// The node currently being built/rendered
     public static var current: Node?
 }
 
 /// Property wrapper for local view state
 @propertyWrapper
-public struct State<Value>: DynamicProperty {
+public struct State<Value: Equatable>: DynamicProperty {
     private let key: String
     private let initialValue: Value
 
@@ -29,10 +31,8 @@ public struct State<Value>: DynamicProperty {
             let oldValue = node.stateStorage[key]
             node.stateStorage[key] = newValue
 
-            // Only mark dirty if value actually changed
             if !isEqual(oldValue, newValue) {
                 node.needsRebuild = true
-                // Notify application to schedule update
                 Application.shared?.scheduleUpdate()
             }
         }
@@ -47,8 +47,7 @@ public struct State<Value>: DynamicProperty {
 
     private func isEqual(_ lhs: Any?, _ rhs: Value) -> Bool {
         guard let lhs = lhs as? Value else { return false }
-        // Use reflection for basic equality check
-        return String(describing: lhs) == String(describing: rhs)
+        return lhs == rhs
     }
 }
 
@@ -81,7 +80,6 @@ public struct Binding<Value> {
     }
 }
 
-// Extension to create bindings to optional values
 extension Binding {
     public func map<T>(
         get: @escaping (Value) -> T,
