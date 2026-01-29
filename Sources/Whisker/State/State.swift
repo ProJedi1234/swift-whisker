@@ -8,7 +8,7 @@ public enum NodeContext {
 
 /// Property wrapper for local view state
 @propertyWrapper
-public struct State<Value>: DynamicProperty {
+public struct State<Value: Equatable>: DynamicProperty {
     private let key: String
     private let initialValue: Value
 
@@ -47,8 +47,7 @@ public struct State<Value>: DynamicProperty {
 
     private func isEqual(_ lhs: Any?, _ rhs: Value) -> Bool {
         guard let lhs = lhs as? Value else { return false }
-        // Use reflection for basic equality check
-        return String(describing: lhs) == String(describing: rhs)
+        return lhs == rhs
     }
 }
 

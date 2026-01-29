@@ -1,0 +1,308 @@
+final class NodeViewBuilder {
+    func buildNode(from view: any View) -> Node {
+        let node = Node(viewType: type(of: view))
+
+        // Set up node context for @State access
+        let previousNode = NodeContext.current
+        NodeContext.current = node
+        defer { NodeContext.current = previousNode }
+
+        // Build based on view type using protocol checks for generics
+        if let text = view as? Text {
+            buildTextNode(node, text: text)
+        } else if let vstack = view as? any _VStackProtocol {
+            buildVStackNode(node, content: vstack._content, alignment: vstack._alignment, spacing: vstack._spacing)
+        } else if let hstack = view as? any _HStackProtocol {
+            buildHStackNode(node, content: hstack._content, alignment: hstack._alignment, spacing: hstack._spacing)
+        } else if let textField = view as? TextField {
+            buildTextFieldNode(node, textField: textField)
+        } else if let secureField = view as? SecureField {
+            buildSecureFieldNode(node, secureField: secureField)
+        } else if let button = view as? Button {
+            buildButtonNode(node, button: button)
+        } else if let tupleView = view as? any _TupleViewProtocol {
+            // TupleView: extract children and add them directly
+            let children = extractViews(from: tupleView._tupleValue)
+            for childView in children {
+                node.addChild(buildNode(from: childView))
+            }
+            // Default vertical layout for bare TupleViews
+            let layoutEngine = VStackLayout(alignment: .leading, spacing: 0)
+            node[.placeChildren] = { [weak node] (bounds: Rect) in
+                guard let node = node else { return }
+                let children = node.children.map { LayoutChild(node: $0) }
+                layoutEngine.placeChildren(in: bounds, children: children)
+            }
+            node.layout = { [weak node] proposal, _ in
+                guard let node = node else { return (.zero, []) }
+                let children = node.children.map { LayoutChild(node: $0) }
+                return (layoutEngine.sizeThatFits(proposal: proposal, children: children), [])
+            }
+        } else {
+            // Custom view or unknown: try to get body and recurse
+            buildCompositeNode(node, view: view)
+        }
+
+        return node
+    }
+
+    private func buildTextNode(_ node: Node, text: Text) {
+        node.render = { [text] frame, buffer in
+            let style = text.style
+            let content = text.content
+            for (i, char) in content.prefix(frame.width).enumerated() {
+                buffer.draw(char, at: Position(x: frame.x + i, y: frame.y), style: style)
+            }
+        }
+
+        node.layout = { proposal, _ in
+            let width = proposal.width.resolve(with: text.content.count)
+            let height = proposal.height.resolve(with: 1)
+            return (Size(width: width, height: height), [])
+        }
+    }
+
+    private func buildVStackNode(_ node: Node, content: Any, alignment: HorizontalAlignment, spacing: Int) {
+        let children = extractViews(from: content)
+        for childView in children {
+            node.addChild(buildNode(from: childView))
+        }
+
+        let layoutEngine = VStackLayout(alignment: alignment, spacing: spacing)
+
+        node[.placeChildren] = { [weak node] (bounds: Rect) in
+            guard let node = node else { return }
+            let children = node.children.map { LayoutChild(node: $0) }
+            layoutEngine.placeChildren(in: bounds, children: children)
+        }
+
+        node.layout = { [weak node] proposal, _ in
+            guard let node = node else { return (.zero, []) }
+            let children = node.children.map { LayoutChild(node: $0) }
+            return (layoutEngine.sizeThatFits(proposal: proposal, children: children), [])
+        }
+    }
+
+    private func buildHStackNode(_ node: Node, content: Any, alignment: VerticalAlignment, spacing: Int) {
+        let children = extractViews(from: content)
+        for childView in children {
+            node.addChild(buildNode(from: childView))
+        }
+
+        let layoutEngine = HStackLayout(alignment: alignment, spacing: spacing)
+
+        node[.placeChildren] = { [weak node] (bounds: Rect) in
+            guard let node = node else { return }
+            let children = node.children.map { LayoutChild(node: $0) }
+            layoutEngine.placeChildren(in: bounds, children: children)
+        }
+
+        node.layout = { [weak node] proposal, _ in
+            guard let node = node else { return (.zero, []) }
+            let children = node.children.map { LayoutChild(node: $0) }
+            return (layoutEngine.sizeThatFits(proposal: proposal, children: children), [])
+        }
+    }
+
+    func buildInputFieldNode(
+        _ node: Node,
+        getText: @escaping () -> String,
+        setText: @escaping (String) -> Void,
+        placeholder: String,
+        isSecure: Bool
+    ) {
+        node.isFocusable = true
+        node[.getText] = getText
+        node[.setText] = setText
+        node[.placeholder] = placeholder
+        node[.cursorPosition] = getText().count
+        node[.isSecure] = isSecure
+
+        let secureFieldWidth = 20
+
+        node[.keyHandler] = { [weak node] (event: KeyEvent) in
+            guard let node = node else { return }
+            guard let getText = node[.getText],
+                  let setText = node[.setText] else { return }
+
+            var text = getText()
+            var cursor = node[.cursorPosition] ?? text.count
+
+            switch event.key {
+            case .char(let c):
+                let index = text.index(text.startIndex, offsetBy: min(cursor, text.count))
+                text.insert(c, at: index)
+                cursor += 1
+            case .backspace:
+                if cursor > 0 && !text.isEmpty {
+                    let index = text.index(text.startIndex, offsetBy: cursor - 1)
+                    text.remove(at: index)
+                    cursor -= 1
+                }
+            case .delete:
+                if cursor < text.count {
+                    let index = text.index(text.startIndex, offsetBy: cursor)
+                    text.remove(at: index)
+                }
+            case .left:
+                cursor = max(0, cursor - 1)
+            case .right:
+                cursor = min(text.count, cursor + 1)
+            case .home:
+                cursor = 0
+            case .end:
+                cursor = text.count
+            default:
+                break
+            }
+
+            setText(text)
+            node[.cursorPosition] = cursor
+            Application.shared?.scheduleUpdate()
+        }
+
+        node.render = { [weak node] frame, buffer in
+            guard let node = node else { return }
+            let text = node[.getText]?() ?? ""
+            let placeholder = node[.placeholder] ?? ""
+            let displayText: String
+
+            if text.isEmpty {
+                displayText = placeholder
+            } else if isSecure {
+                displayText = String(repeating: "\u{2022}", count: text.count)
+            } else {
+                displayText = text
+            }
+
+            let style: Style = text.isEmpty
+                ? Style(foreground: .brightBlack)
+                : .default
+
+            for (i, char) in displayText.prefix(frame.width).enumerated() {
+                buffer.draw(char, at: Position(x: frame.x + i, y: frame.y), style: style)
+            }
+        }
+
+        node.layout = { [weak node] proposal, _ in
+            guard let node = node else { return (.zero, []) }
+            let text = node[.getText]?() ?? ""
+            let placeholder = node[.placeholder] ?? ""
+            let displayText = text.isEmpty ? placeholder : text
+            let displayWidth = isSecure ? secureFieldWidth : displayText.count
+            let width = proposal.width.resolve(with: displayWidth)
+            return (Size(width: width, height: 1), [])
+        }
+    }
+
+    private func buildTextFieldNode(_ node: Node, textField: TextField) {
+        buildInputFieldNode(
+            node,
+            getText: textField.getText,
+            setText: textField.setText,
+            placeholder: textField.placeholder,
+            isSecure: false
+        )
+    }
+
+    private func buildSecureFieldNode(_ node: Node, secureField: SecureField) {
+        buildInputFieldNode(
+            node,
+            getText: secureField.getText,
+            setText: secureField.setText,
+            placeholder: secureField.placeholder,
+            isSecure: true
+        )
+    }
+
+    private func buildButtonNode(_ node: Node, button: Button) {
+        node.isFocusable = true
+        node[.action] = button.action
+        node[.label] = button.label
+
+        node[.keyHandler] = { [weak node] (event: KeyEvent) in
+            guard let node = node else { return }
+            if event.key == .enter || event.key == .char(" ") {
+                if let action = node[.action] {
+                    action()
+                }
+            }
+        }
+
+        node.render = { [weak node] frame, buffer in
+            guard let node = node else { return }
+            let label = node[.label] ?? "Button"
+
+            let style: Style = node.isFocused
+                ? Style(foreground: .black, background: .white, attributes: [.bold])
+                : Style(foreground: .white)
+
+            let text = "[ \(label) ]"
+            for (i, char) in text.prefix(frame.width).enumerated() {
+                buffer.draw(char, at: Position(x: frame.x + i, y: frame.y), style: style)
+            }
+        }
+
+        node.layout = { proposal, _ in
+            let label = button.label
+            let width = proposal.width.resolve(with: label.count + 4) // "[ label ]"
+            return (Size(width: width, height: 1), [])
+        }
+    }
+
+    private func buildCompositeNode(_ node: Node, view: any View) {
+        // Use Mirror to access body
+        let mirror = Mirror(reflecting: view)
+
+        // Check if it's a tuple view (from ViewBuilder)
+        if let value = mirror.children.first?.value {
+            if let tupleView = value as? any View {
+                let childNode = buildNode(from: tupleView)
+                node.addChild(childNode)
+            } else {
+                // It's a tuple of views
+                let views = extractViews(from: value)
+                for childView in views {
+                    let childNode = buildNode(from: childView)
+                    node.addChild(childNode)
+                }
+            }
+        }
+
+        // Layout passes through to children
+        node.layout = { [weak node] proposal, _ in
+            guard let node = node, let firstChild = node.children.first else {
+                return (.zero, [])
+            }
+            let childLayout = LayoutChild(node: firstChild)
+            let size = childLayout.sizeThatFits(proposal)
+            return (size, [])
+        }
+    }
+
+    private func extractViews(from value: Any) -> [any View] {
+        // If it's a TupleView, unwrap to get the inner tuple
+        if let tupleView = value as? any _TupleViewProtocol {
+            return extractViews(from: tupleView._tupleValue)
+        }
+
+        // Mirror the value to extract child views
+        var views: [any View] = []
+        let mirror = Mirror(reflecting: value)
+
+        for child in mirror.children {
+            if let view = child.value as? any View {
+                views.append(view)
+            }
+        }
+
+        // If no children found via mirror, try direct cast
+        if views.isEmpty {
+            if let view = value as? any View {
+                views.append(view)
+            }
+        }
+
+        return views
+    }
+}

@@ -29,19 +29,10 @@ public struct LayoutChild {
 
     /// Calculate preferred size for this child
     public func sizeThatFits(_ proposal: ProposedSize) -> Size {
-        // Use cached size if available and not dirty
-        if let cached = node.cachedSize, !node.needsLayout {
-            return cached
-        }
-
-        // If node has a custom layout, use it
         if let layoutFn = node.layout {
             let (size, _) = layoutFn(proposal, node.children)
-            node.cachedSize = size
             return size
         }
-
-        // Default: return zero (leaf nodes override via sizeThatFits)
         return .zero
     }
 }
