@@ -16,8 +16,8 @@ struct FocusManager {
             focusedNode = nil
             return
         }
-        let index = min(focusedIndex, focusables.count - 1)
-        focusedNode = focusables[index]
+        focusedIndex = min(focusedIndex, focusables.count - 1)
+        focusedNode = focusables[focusedIndex]
         focusedNode?.isFocused = true
     }
 

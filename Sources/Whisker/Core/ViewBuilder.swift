@@ -328,13 +328,17 @@ final class NodeViewBuilder {
             }
         }
 
-        node.layout = { [weak node] proposal, _ in
-            guard let node = node, let firstChild = node.children.first else {
-                return (.zero, [])
+        if node.children.count > 1 {
+            applyLayout(node, engine: VStackLayout(alignment: .leading, spacing: 0))
+        } else {
+            node.layout = { [weak node] proposal, _ in
+                guard let node = node, let firstChild = node.children.first else {
+                    return (.zero, [])
+                }
+                let childLayout = LayoutChild(node: firstChild)
+                let size = childLayout.sizeThatFits(proposal)
+                return (size, [])
             }
-            let childLayout = LayoutChild(node: firstChild)
-            let size = childLayout.sizeThatFits(proposal)
-            return (size, [])
         }
     }
 
