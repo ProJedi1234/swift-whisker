@@ -1,7 +1,5 @@
 import Foundation
 
-// MARK: - Layout Protocol
-
 /// Protocol for types that can compute layout
 public protocol Layout {
     /// Calculate the size this layout needs given constraints and children
@@ -36,8 +34,6 @@ public struct LayoutChild {
         return .zero
     }
 }
-
-// MARK: - VStack Layout
 
 public struct VStackLayout: Layout {
     public let alignment: HorizontalAlignment
@@ -96,8 +92,6 @@ public struct VStackLayout: Layout {
     }
 }
 
-// MARK: - HStack Layout
-
 public struct HStackLayout: Layout {
     public let alignment: VerticalAlignment
     public let spacing: Int
@@ -154,8 +148,6 @@ public struct HStackLayout: Layout {
         }
     }
 }
-
-// MARK: - ZStack Layout
 
 public struct ZStackLayout: Layout {
     public let alignment: Alignment

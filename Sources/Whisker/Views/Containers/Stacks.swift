@@ -1,26 +1,22 @@
-// MARK: - Internal Protocols for Type-Erased Detection
-
-/// Internal protocol so Application.buildNode can detect any VStack<C> regardless of C
+/// Internal protocol so NodeViewBuilder can detect any VStack<C> regardless of C
 protocol _VStackProtocol {
     var _alignment: HorizontalAlignment { get }
     var _spacing: Int { get }
     var _content: Any { get }
 }
 
-/// Internal protocol so Application.buildNode can detect any HStack<C> regardless of C
+/// Internal protocol so NodeViewBuilder can detect any HStack<C> regardless of C
 protocol _HStackProtocol {
     var _alignment: VerticalAlignment { get }
     var _spacing: Int { get }
     var _content: Any { get }
 }
 
-/// Internal protocol so Application.buildNode can detect any ZStack<C> regardless of C
+/// Internal protocol so NodeViewBuilder can detect any ZStack<C> regardless of C
 protocol _ZStackProtocol {
     var _alignment: Alignment { get }
     var _content: Any { get }
 }
-
-// MARK: - Alignments
 
 /// Alignment for items along the horizontal axis
 public enum HorizontalAlignment: Sendable {
