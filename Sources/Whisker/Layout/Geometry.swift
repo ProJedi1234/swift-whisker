@@ -65,7 +65,7 @@ public struct Rect: Equatable, Sendable {
     /// Check if a position is inside this rect
     public func contains(_ position: Position) -> Bool {
         position.x >= minX && position.x < maxX &&
-        position.y >= minY && position.y < maxY
+            position.y >= minY && position.y < maxY
     }
 
     /// Return the intersection of two rects

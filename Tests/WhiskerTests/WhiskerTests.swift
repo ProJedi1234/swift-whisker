@@ -92,7 +92,7 @@ final class WhiskerTests: XCTestCase {
 
         backend.write([
             RenderCommand(position: Position(x: 0, y: 0), cell: Cell(char: "H")),
-            RenderCommand(position: Position(x: 1, y: 0), cell: Cell(char: "i")),
+            RenderCommand(position: Position(x: 1, y: 0), cell: Cell(char: "i"))
         ])
 
         XCTAssertEqual(backend.text(atLine: 0), "Hi")
