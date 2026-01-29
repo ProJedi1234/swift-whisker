@@ -2,12 +2,10 @@ final class NodeViewBuilder {
     func buildNode(from view: any View) -> Node {
         let node = Node(viewType: type(of: view))
 
-        // Set up node context for @State access
         let previousNode = NodeContext.current
         NodeContext.current = node
         defer { NodeContext.current = previousNode }
 
-        // Build based on view type using protocol checks for generics
         if let text = view as? Text {
             buildTextNode(node, text: text)
         } else if let vstack = view as? any _VStackProtocol {
@@ -21,25 +19,12 @@ final class NodeViewBuilder {
         } else if let button = view as? Button {
             buildButtonNode(node, button: button)
         } else if let tupleView = view as? any _TupleViewProtocol {
-            // TupleView: extract children and add them directly
             let children = extractViews(from: tupleView._tupleValue)
             for childView in children {
                 node.addChild(buildNode(from: childView))
             }
-            // Default vertical layout for bare TupleViews
-            let layoutEngine = VStackLayout(alignment: .leading, spacing: 0)
-            node[.placeChildren] = { [weak node] (bounds: Rect) in
-                guard let node = node else { return }
-                let children = node.children.map { LayoutChild(node: $0) }
-                layoutEngine.placeChildren(in: bounds, children: children)
-            }
-            node.layout = { [weak node] proposal, _ in
-                guard let node = node else { return (.zero, []) }
-                let children = node.children.map { LayoutChild(node: $0) }
-                return (layoutEngine.sizeThatFits(proposal: proposal, children: children), [])
-            }
+            applyLayout(node, engine: VStackLayout(alignment: .leading, spacing: 0))
         } else {
-            // Custom view or unknown: try to get body and recurse
             buildCompositeNode(node, view: view)
         }
 
@@ -62,25 +47,26 @@ final class NodeViewBuilder {
         }
     }
 
-    private func buildVStackNode(_ node: Node, content: Any, alignment: HorizontalAlignment, spacing: Int) {
-        let children = extractViews(from: content)
-        for childView in children {
-            node.addChild(buildNode(from: childView))
-        }
-
-        let layoutEngine = VStackLayout(alignment: alignment, spacing: spacing)
-
+    private func applyLayout(_ node: Node, engine: any Layout) {
         node[.placeChildren] = { [weak node] (bounds: Rect) in
             guard let node = node else { return }
             let children = node.children.map { LayoutChild(node: $0) }
-            layoutEngine.placeChildren(in: bounds, children: children)
+            engine.placeChildren(in: bounds, children: children)
         }
 
         node.layout = { [weak node] proposal, _ in
             guard let node = node else { return (.zero, []) }
             let children = node.children.map { LayoutChild(node: $0) }
-            return (layoutEngine.sizeThatFits(proposal: proposal, children: children), [])
+            return (engine.sizeThatFits(proposal: proposal, children: children), [])
         }
+    }
+
+    private func buildVStackNode(_ node: Node, content: Any, alignment: HorizontalAlignment, spacing: Int) {
+        let children = extractViews(from: content)
+        for childView in children {
+            node.addChild(buildNode(from: childView))
+        }
+        applyLayout(node, engine: VStackLayout(alignment: alignment, spacing: spacing))
     }
 
     private func buildHStackNode(_ node: Node, content: Any, alignment: VerticalAlignment, spacing: Int) {
@@ -88,20 +74,7 @@ final class NodeViewBuilder {
         for childView in children {
             node.addChild(buildNode(from: childView))
         }
-
-        let layoutEngine = HStackLayout(alignment: alignment, spacing: spacing)
-
-        node[.placeChildren] = { [weak node] (bounds: Rect) in
-            guard let node = node else { return }
-            let children = node.children.map { LayoutChild(node: $0) }
-            layoutEngine.placeChildren(in: bounds, children: children)
-        }
-
-        node.layout = { [weak node] proposal, _ in
-            guard let node = node else { return (.zero, []) }
-            let children = node.children.map { LayoutChild(node: $0) }
-            return (layoutEngine.sizeThatFits(proposal: proposal, children: children), [])
-        }
+        applyLayout(node, engine: HStackLayout(alignment: alignment, spacing: spacing))
     }
 
     func buildInputFieldNode(
@@ -251,16 +224,13 @@ final class NodeViewBuilder {
     }
 
     private func buildCompositeNode(_ node: Node, view: any View) {
-        // Use Mirror to access body
         let mirror = Mirror(reflecting: view)
 
-        // Check if it's a tuple view (from ViewBuilder)
         if let value = mirror.children.first?.value {
             if let tupleView = value as? any View {
                 let childNode = buildNode(from: tupleView)
                 node.addChild(childNode)
             } else {
-                // It's a tuple of views
                 let views = extractViews(from: value)
                 for childView in views {
                     let childNode = buildNode(from: childView)
@@ -269,7 +239,6 @@ final class NodeViewBuilder {
             }
         }
 
-        // Layout passes through to children
         node.layout = { [weak node] proposal, _ in
             guard let node = node, let firstChild = node.children.first else {
                 return (.zero, [])
@@ -281,12 +250,10 @@ final class NodeViewBuilder {
     }
 
     private func extractViews(from value: Any) -> [any View] {
-        // If it's a TupleView, unwrap to get the inner tuple
         if let tupleView = value as? any _TupleViewProtocol {
             return extractViews(from: tupleView._tupleValue)
         }
 
-        // Mirror the value to extract child views
         var views: [any View] = []
         let mirror = Mirror(reflecting: value)
 
@@ -296,7 +263,6 @@ final class NodeViewBuilder {
             }
         }
 
-        // If no children found via mirror, try direct cast
         if views.isEmpty {
             if let view = value as? any View {
                 views.append(view)
