@@ -1,5 +1,13 @@
+/// Internal protocol so NodeViewBuilder can detect any ForEach regardless of generic parameters
+protocol _ForEachProtocol {
+    var _views: [any View] { get }
+}
+
 /// A view that creates views from an underlying collection of identified data
-public struct ForEach<Data, ID, Content>: View where Data: RandomAccessCollection, ID: Hashable, Content: View {
+public struct ForEach<Data, ID, Content>: View, _ForEachProtocol where Data: RandomAccessCollection, ID: Hashable, Content: View {
+    var _views: [any View] {
+        data.map { content($0) }
+    }
     public typealias Body = Never
 
     let data: Data

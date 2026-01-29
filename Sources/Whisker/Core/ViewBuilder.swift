@@ -6,18 +6,44 @@ final class NodeViewBuilder {
         NodeContext.current = node
         defer { NodeContext.current = previousNode }
 
-        if let text = view as? Text {
+        if view is EmptyView {
+            return node
+        } else if let text = view as? Text {
             buildTextNode(node, text: text)
         } else if let vstack = view as? any _VStackProtocol {
             buildVStackNode(node, content: vstack._content, alignment: vstack._alignment, spacing: vstack._spacing)
         } else if let hstack = view as? any _HStackProtocol {
             buildHStackNode(node, content: hstack._content, alignment: hstack._alignment, spacing: hstack._spacing)
+        } else if let zstack = view as? any _ZStackProtocol {
+            buildZStackNode(node, content: zstack._content, alignment: zstack._alignment)
+        } else if view is Spacer {
+            buildSpacerNode(node, spacer: view as! Spacer)
+        } else if view is Divider {
+            buildDividerNode(node)
         } else if let textField = view as? TextField {
             buildTextFieldNode(node, textField: textField)
         } else if let secureField = view as? SecureField {
             buildSecureFieldNode(node, secureField: secureField)
         } else if let button = view as? Button {
             buildButtonNode(node, button: button)
+        } else if let toggle = view as? Toggle {
+            buildToggleNode(node, toggle: toggle)
+        } else if let forEach = view as? any _ForEachProtocol {
+            let children = forEach._views
+            for childView in children {
+                node.addChild(buildNode(from: childView))
+            }
+            applyLayout(node, engine: VStackLayout(alignment: .leading, spacing: 0))
+        } else if let conditional = view as? any _ConditionalViewProtocol {
+            let childNode = buildNode(from: conditional._activeView)
+            node.addChild(childNode)
+            node.layout = { [weak node] proposal, _ in
+                guard let node = node, let firstChild = node.children.first else {
+                    return (.zero, [])
+                }
+                let childLayout = LayoutChild(node: firstChild)
+                return (childLayout.sizeThatFits(proposal), [])
+            }
         } else if let tupleView = view as? any _TupleViewProtocol {
             let children = extractViews(from: tupleView._tupleValue)
             for childView in children {
@@ -75,6 +101,69 @@ final class NodeViewBuilder {
             node.addChild(buildNode(from: childView))
         }
         applyLayout(node, engine: HStackLayout(alignment: alignment, spacing: spacing))
+    }
+
+    private func buildZStackNode(_ node: Node, content: Any, alignment: Alignment) {
+        let children = extractViews(from: content)
+        for childView in children {
+            node.addChild(buildNode(from: childView))
+        }
+        applyLayout(node, engine: ZStackLayout(alignment: alignment))
+    }
+
+    private func buildSpacerNode(_ node: Node, spacer: Spacer) {
+        let minLength = spacer.minLength ?? 0
+
+        node.layout = { proposal, _ in
+            let width = proposal.width.resolve(with: minLength)
+            let height = proposal.height.resolve(with: minLength)
+            return (Size(width: width, height: height), [])
+        }
+    }
+
+    private func buildDividerNode(_ node: Node) {
+        node.render = { frame, buffer in
+            let style = Style(foreground: .brightBlack)
+            for x in frame.x..<(frame.x + frame.width) {
+                buffer.draw("─", at: Position(x: x, y: frame.y), style: style)
+            }
+        }
+
+        node.layout = { proposal, _ in
+            let width = proposal.width.resolve(with: 1)
+            return (Size(width: width, height: 1), [])
+        }
+    }
+
+    private func buildToggleNode(_ node: Node, toggle: Toggle) {
+        node.isFocusable = true
+
+        node[.keyHandler] = { (event: KeyEvent) in
+            if event.key == .enter || event.key == .char(" ") {
+                toggle.isOn.wrappedValue.toggle()
+                Application.shared?.scheduleUpdate()
+            }
+        }
+
+        node.render = { [weak node] frame, buffer in
+            guard let node = node else { return }
+            let isOn = toggle.isOn.wrappedValue
+            let indicator = isOn ? "[x]" : "[ ]"
+            let text = "\(indicator) \(toggle.label)"
+
+            let style: Style = node.isFocused
+                ? Style(foreground: .black, background: .white, attributes: [.bold])
+                : .default
+
+            for (i, char) in text.prefix(frame.width).enumerated() {
+                buffer.draw(char, at: Position(x: frame.x + i, y: frame.y), style: style)
+            }
+        }
+
+        node.layout = { proposal, _ in
+            let width = proposal.width.resolve(with: toggle.label.count + 4) // "[x] label"
+            return (Size(width: width, height: 1), [])
+        }
     }
 
     func buildInputFieldNode(
