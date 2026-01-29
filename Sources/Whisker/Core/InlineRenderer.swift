@@ -71,7 +71,7 @@ final class InlineRenderer {
             lastCursorContentRow = cursorY
         } else {
             backend.setCursorVisible(false)
-            lastCursorContentRow = contentHeight - 1
+            lastCursorContentRow = max(0, contentHeight - 1) // Prevent negative row index
         }
 
         backend.flush()

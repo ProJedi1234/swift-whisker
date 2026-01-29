@@ -2,6 +2,11 @@ struct InputParser {
     static func parse(_ bytes: [UInt8]) -> TerminalEvent? {
         guard !bytes.isEmpty else { return nil }
 
+        // TODO: A lone ESC byte is ambiguous — it could be a standalone Escape keypress or the
+        // start of a multi-byte ANSI sequence (e.g. ESC [ A for arrow up) that was split across
+        // reads. On local terminals this rarely happens because sequences arrive atomically, but
+        // over high-latency connections (SSH) bytes can fragment. A proper fix would buffer the
+        // ESC and wait ~50ms for continuation bytes before emitting .escape.
         if bytes.count == 1 {
             let byte = bytes[0]
             switch byte {
