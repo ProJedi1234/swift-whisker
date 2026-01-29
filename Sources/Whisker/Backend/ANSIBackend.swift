@@ -12,13 +12,10 @@ private func tcflag(_ v: Int32) -> UInt { UInt(bitPattern: Int(v)) }
 public final class ANSIBackend: TerminalBackend, @unchecked Sendable {
     private var originalTermios: termios?
     private var outputBuffer = Data()
-    private var eventContinuation: AsyncStream<TerminalEvent>.Continuation?
 
     public var renderMode: RenderMode = .fullscreen
 
     public init() {}
-
-    // MARK: - TerminalBackend
 
     public var size: Size {
         var ws = winsize()
@@ -26,21 +23,6 @@ public final class ANSIBackend: TerminalBackend, @unchecked Sendable {
             return Size(width: Int(ws.ws_col), height: Int(ws.ws_row))
         }
         return Size(width: 80, height: 24)  // Fallback
-    }
-
-    public func events() -> AsyncStream<TerminalEvent> {
-        AsyncStream { continuation in
-            self.eventContinuation = continuation
-
-            // Start input reading on background thread
-            DispatchQueue.global(qos: .userInteractive).async {
-                self.readInputLoop()
-            }
-
-            continuation.onTermination = { _ in
-                self.eventContinuation = nil
-            }
-        }
     }
 
     public func write(_ commands: [RenderCommand]) {
@@ -156,44 +138,18 @@ public final class ANSIBackend: TerminalBackend, @unchecked Sendable {
         appendToBuffer(string)
     }
 
-    // MARK: - Private
-
     private func appendToBuffer(_ string: String) {
         outputBuffer.append(contentsOf: string.utf8)
     }
-
-    private func readInputLoop() {
-        var buffer = [UInt8](repeating: 0, count: 16)
-
-        while eventContinuation != nil {
-            let bytesRead = read(STDIN_FILENO, &buffer, buffer.count)
-            if bytesRead > 0 {
-                if let event = parseInput(Array(buffer.prefix(bytesRead))) {
-                    eventContinuation?.yield(event)
-                }
-            }
-        }
-    }
-
-    private func parseInput(_ bytes: [UInt8]) -> TerminalEvent? {
-        InputParser.parse(bytes)
-    }
 }
 
-// MARK: - ANSI Escape Sequences
-
 internal enum ANSI {
-    static let escape = "\u{1b}"
-    static let csi = "\u{1b}["
-
     static let reset = "\u{1b}[0m"
     static let clearScreen = "\u{1b}[2J"
     static let cursorHide = "\u{1b}[?25l"
     static let cursorShow = "\u{1b}[?25h"
     static let alternateScreenOn = "\u{1b}[?1049h"
     static let alternateScreenOff = "\u{1b}[?1049l"
-    static let mouseTrackingOn = "\u{1b}[?1000h\u{1b}[?1006h"
-    static let mouseTrackingOff = "\u{1b}[?1000l\u{1b}[?1006l"
 
     static func moveTo(_ pos: Position) -> String {
         "\u{1b}[\(pos.y + 1);\(pos.x + 1)H"
