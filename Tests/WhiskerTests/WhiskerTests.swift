@@ -102,7 +102,27 @@ final class WhiskerTests: XCTestCase {
 
     func testTextCreation() {
         let text = Text("Hello")
-        XCTAssertNotNil(text)
+        XCTAssertEqual(text.content, "Hello")
+    }
+
+    func testTextStringLiteral() {
+        let text: Text = "Hello literal"
+        XCTAssertEqual(text.content, "Hello literal")
+    }
+
+    func testTextStringInterpolation() {
+        let text: Text = "Hello World \(123)"
+        XCTAssertEqual(text.content, "Hello World 123")
+    }
+
+    func testTextVerbatim() {
+        let text = Text(verbatim: "Raw \\(text)")
+        XCTAssertEqual(text.content, "Raw \\(text)")
+    }
+
+    func testTextConcatenation() {
+        let combined = Text("Hello") + Text(" World")
+        XCTAssertEqual(combined.content, "Hello World")
     }
 
     func testVStackCreation() {

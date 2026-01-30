@@ -8,33 +8,40 @@ struct InputParser {
         // over high-latency connections (SSH) bytes can fragment. A proper fix would buffer the
         // ESC and wait ~50ms for continuation bytes before emitting .escape.
         if bytes.count == 1 {
-            let byte = bytes[0]
-            switch byte {
-            case 3: return .key(KeyEvent(key: .char("c"), modifiers: .control))  // Ctrl+C
-            case 9: return .key(KeyEvent(key: .tab))
-            case 13: return .key(KeyEvent(key: .enter))
-            case 27: return .key(KeyEvent(key: .escape))
-            case 127: return .key(KeyEvent(key: .backspace))
-            case 32...126:
-                return .key(KeyEvent(key: .char(Character(UnicodeScalar(byte)))))
-            default:
-                return nil
-            }
+            return parseSingleByte(bytes[0])
         }
 
         if bytes[0] == 27 && bytes.count >= 3 && bytes[1] == 91 {
-            switch bytes[2] {
-            case 65: return .key(KeyEvent(key: .up))
-            case 66: return .key(KeyEvent(key: .down))
-            case 67: return .key(KeyEvent(key: .right))
-            case 68: return .key(KeyEvent(key: .left))
-            case 72: return .key(KeyEvent(key: .home))
-            case 70: return .key(KeyEvent(key: .end))
-            case 90: return .key(KeyEvent(key: .tab, modifiers: .shift))
-            default: break
-            }
+            return parseANSIEscape(bytes)
         }
 
         return nil
+    }
+
+    private static func parseSingleByte(_ byte: UInt8) -> TerminalEvent? {
+        switch byte {
+        case 3: return .key(KeyEvent(key: .char("c"), modifiers: .control))  // Ctrl+C
+        case 9: return .key(KeyEvent(key: .tab))
+        case 13: return .key(KeyEvent(key: .enter))
+        case 27: return .key(KeyEvent(key: .escape))
+        case 127: return .key(KeyEvent(key: .backspace))
+        case 32...126:
+            return .key(KeyEvent(key: .char(Character(UnicodeScalar(byte)))))
+        default:
+            return nil
+        }
+    }
+
+    private static func parseANSIEscape(_ bytes: [UInt8]) -> TerminalEvent? {
+        switch bytes[2] {
+        case 65: return .key(KeyEvent(key: .up))
+        case 66: return .key(KeyEvent(key: .down))
+        case 67: return .key(KeyEvent(key: .right))
+        case 68: return .key(KeyEvent(key: .left))
+        case 72: return .key(KeyEvent(key: .home))
+        case 70: return .key(KeyEvent(key: .end))
+        case 90: return .key(KeyEvent(key: .tab, modifiers: .shift))
+        default: return nil
+        }
     }
 }

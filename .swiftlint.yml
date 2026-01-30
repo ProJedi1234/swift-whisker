@@ -7,7 +7,7 @@ excluded:
 
 # ─── Disabled Rules ───────────────────────────────────
 disabled_rules:
-  - todo                      # Allow TODO/FIXME comments during development
+  - todo # Allow TODO/FIXME comments during development
 
 # ─── Rule Configuration ──────────────────────────────
 
