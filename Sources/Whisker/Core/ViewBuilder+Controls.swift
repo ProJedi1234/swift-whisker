@@ -254,7 +254,7 @@ extension NodeViewBuilder {
             for (index, option) in options.enumerated() {
                 let segmentText = " \(option) "
                 var style: Style = (index == selectedIndex)
-                    ? Style(foreground: .black, background: .white)
+                    ? Style(attributes: [.reverse])
                     : .default
 
                 if index == selectedIndex && node.isFocused {
