@@ -154,7 +154,7 @@ final class WhiskerTests: XCTestCase {
         let node = Node(viewType: CounterView.self)
         NodeContext.current = node
 
-        var view = CounterView()
+        let view = CounterView()
         node.needsRebuild = false
         app.updateScheduled = false
         view.count = 1
