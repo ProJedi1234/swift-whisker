@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  pull_request:
+    paths:
+      - "Sources/**"
+      - "Tests/**"
+      - "Package.swift"
+      - "Package.resolved"
+      - ".swiftlint.yml"
+      - ".github/workflows/ci.yml"
+  push:
+    branches:
+      - "main"
+    paths:
+      - "Sources/**"
+      - "Tests/**"
+      - "Package.swift"
+      - "Package.resolved"
+      - ".swiftlint.yml"
+      - ".github/workflows/ci.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: SwiftLint (Docker)
+        run: >-
+          docker run --rm
+          -v "${{ github.workspace }}:${{ github.workspace }}"
+          -w "${{ github.workspace }}"
+          ghcr.io/realm/swiftlint:0.62.2
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Swift
+        uses: swift-actions/setup-swift@v2
+
+      - name: Resolve Swift Version
+        id: swift-version
+        run: echo "version=$(swift --version | head -n 1 | awk '{print $3}')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache SwiftPM
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build
+            .swiftpm
+          key: swiftpm-${{ runner.os }}-swift-${{ steps.swift-version.outputs.version }}-${{ hashFiles('Package.resolved', 'Package.swift') }}
+          restore-keys: |
+            swiftpm-${{ runner.os }}-swift-${{ steps.swift-version.outputs.version }}-
+            swiftpm-${{ runner.os }}-
+
+      - name: Run Tests
+        run: swift test
