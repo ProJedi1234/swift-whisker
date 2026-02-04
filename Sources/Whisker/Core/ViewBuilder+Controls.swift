@@ -67,9 +67,11 @@ extension NodeViewBuilder {
     }
 
     private static func applyKeyEdit(_ key: Key, text: inout String, cursor: inout Int) {
+        cursor = min(max(0, cursor), text.count)
+
         switch key {
         case .char(let c):
-            let index = text.index(text.startIndex, offsetBy: min(cursor, text.count))
+            let index = text.index(text.startIndex, offsetBy: cursor)
             text.insert(c, at: index)
             cursor += 1
         case .backspace:
