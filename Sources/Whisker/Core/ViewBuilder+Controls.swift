@@ -116,9 +116,16 @@ extension NodeViewBuilder {
                 displayText = text
             }
 
-            let style: Style = text.isEmpty
-                ? Style(foreground: .brightBlack)
-                : .default
+            var style: Style
+            if text.isEmpty {
+                style = Style().resolved(
+                    with: node.environment,
+                    fallbackForeground: .brightBlack
+                )
+                style.attributes.insert(.dim)
+            } else {
+                style = Style().resolved(with: node.environment)
+            }
 
             for (i, char) in displayText.prefix(frame.width).enumerated() {
                 buffer.draw(char, at: Position(x: frame.x + i, y: frame.y), style: style)
@@ -166,9 +173,14 @@ extension NodeViewBuilder {
             guard let node = node else { return }
             let label = node[.label] ?? "Button"
 
-            let style: Style = node.isFocused
-                ? Style(foreground: .black, background: .white, attributes: [.bold])
-                : Style(foreground: .white)
+            var style = Style().resolved(
+                with: node.environment,
+                fallbackForeground: .white
+            )
+            if node.isFocused {
+                style.attributes.insert(.reverse)
+                style.attributes.insert(.bold)
+            }
 
             let text = "[ \(label) ]"
             for (i, char) in text.prefix(frame.width).enumerated() {
@@ -201,9 +213,11 @@ extension NodeViewBuilder {
             let indicator = isOn ? "[x]" : "[ ]"
             let text = "\(indicator) \(toggle.label)"
 
-            let style: Style = node.isFocused
-                ? Style(foreground: .black, background: .white, attributes: [.bold])
-                : .default
+            var style = Style().resolved(with: node.environment)
+            if node.isFocused {
+                style.attributes.insert(.reverse)
+                style.attributes.insert(.bold)
+            }
 
             for (i, char) in text.prefix(frame.width).enumerated() {
                 buffer.draw(char, at: Position(x: frame.x + i, y: frame.y), style: style)
@@ -253,9 +267,10 @@ extension NodeViewBuilder {
 
             for (index, option) in options.enumerated() {
                 let segmentText = " \(option) "
-                var style: Style = (index == selectedIndex)
-                    ? Style(attributes: [.reverse])
-                    : .default
+                var style = Style().resolved(with: node.environment)
+                if index == selectedIndex {
+                    style.attributes.insert(.reverse)
+                }
 
                 if index == selectedIndex && node.isFocused {
                     style = style.bold()

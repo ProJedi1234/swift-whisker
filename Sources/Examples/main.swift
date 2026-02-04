@@ -66,6 +66,7 @@ let app = Application(mode: .inline) {
                 get: { state.planIndex },
                 set: { state.planIndex = $0 }
             ))
+            .foregroundColor(.brightCyan)
         }
         HStack(spacing: 0) {
             Text("  ")

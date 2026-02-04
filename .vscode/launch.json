@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:swift-whisker}",
+            "name": "Debug Examples",
+            "target": "Examples",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug Examples"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:swift-whisker}",
+            "name": "Release Examples",
+            "target": "Examples",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release Examples"
+        }
+    ]
+}

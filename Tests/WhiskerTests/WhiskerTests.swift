@@ -7,6 +7,16 @@ final class WhiskerTests: XCTestCase {
         var body: some View { Text("\(count)") }
     }
 
+    private func firstTextNode(in root: Node) -> Node? {
+        var found: Node?
+        root.traverse { node in
+            if found == nil && node.viewType == Text.self {
+                found = node
+            }
+        }
+        return found
+    }
+
     // MARK: - Geometry Tests
 
     func testPositionArithmetic() {
@@ -139,6 +149,60 @@ final class WhiskerTests: XCTestCase {
             Text(item)
         }
         XCTAssertNotNil(forEach)
+    }
+
+    func testEnvironmentStylesCascadeToText() {
+        let view = VStack {
+            Text("A")
+        }
+        .foregroundColor(.red)
+        .bold()
+
+        let viewBuilder = NodeViewBuilder()
+        let root = viewBuilder.buildNode(from: view)
+
+        guard let textNode = firstTextNode(in: root) else {
+            XCTFail("Expected to find a Text node")
+            return
+        }
+
+        textNode.frame = Rect(x: 0, y: 0, width: 10, height: 1)
+        var buffer = RenderBuffer()
+        textNode.render?(textNode.frame, &buffer)
+
+        guard let style = buffer.commands.first?.cell.style else {
+            XCTFail("Expected rendered text style")
+            return
+        }
+
+        XCTAssertEqual(style.foreground, .red)
+        XCTAssertTrue(style.attributes.contains(.bold))
+    }
+
+    func testEnvironmentForegroundDoesNotOverrideExplicitTextColor() {
+        let view = VStack {
+            Text("A").foregroundColor(.green)
+        }
+        .foregroundColor(.red)
+
+        let viewBuilder = NodeViewBuilder()
+        let root = viewBuilder.buildNode(from: view)
+
+        guard let textNode = firstTextNode(in: root) else {
+            XCTFail("Expected to find a Text node")
+            return
+        }
+
+        textNode.frame = Rect(x: 0, y: 0, width: 10, height: 1)
+        var buffer = RenderBuffer()
+        textNode.render?(textNode.frame, &buffer)
+
+        guard let style = buffer.commands.first?.cell.style else {
+            XCTFail("Expected rendered text style")
+            return
+        }
+
+        XCTAssertEqual(style.foreground, .green)
     }
 
     // MARK: - Integration Tests

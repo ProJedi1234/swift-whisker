@@ -3,6 +3,7 @@ final class NodeViewBuilder {
         let node = Node(viewType: type(of: view))
 
         let previousNode = NodeContext.current
+        node.environment = previousNode?.environment ?? EnvironmentValues()
         NodeContext.current = node
         defer { NodeContext.current = previousNode }
 
@@ -34,8 +35,9 @@ final class NodeViewBuilder {
     }
 
     private func buildTextNode(_ node: Node, text: Text) {
-        node.render = { [text] frame, buffer in
-            let style = text.style
+        node.render = { [weak node, text] frame, buffer in
+            guard let node = node else { return }
+            let style = text.style.resolved(with: node.environment)
             let content = text.content
             for (i, char) in content.prefix(frame.width).enumerated() {
                 buffer.draw(char, at: Position(x: frame.x + i, y: frame.y), style: style)
@@ -60,8 +62,12 @@ final class NodeViewBuilder {
     }
 
     private func buildDividerNode(_ node: Node) {
-        node.render = { frame, buffer in
-            let style = Style(foreground: .brightBlack)
+        node.render = { [weak node] frame, buffer in
+            guard let node = node else { return }
+            let style = Style().resolved(
+                with: node.environment,
+                fallbackForeground: .brightBlack
+            )
             for x in frame.x..<(frame.x + frame.width) {
                 buffer.draw("─", at: Position(x: x, y: frame.y), style: style)
             }
@@ -76,7 +82,10 @@ final class NodeViewBuilder {
     // MARK: - Container Views
 
     private func buildContainerNode(_ node: Node, from view: any View) -> Bool {
-        if let vstack = view as? any _VStackProtocol {
+        if let modifier = view as? any _EnvironmentModifierProtocol {
+            buildEnvironmentNode(node, modifier: modifier)
+            return true
+        } else if let vstack = view as? any _VStackProtocol {
             buildVStackNode(node, content: vstack._content, alignment: vstack._alignment, spacing: vstack._spacing)
             return true
         } else if let hstack = view as? any _HStackProtocol {
@@ -96,6 +105,22 @@ final class NodeViewBuilder {
             return true
         }
         return false
+    }
+
+    private func buildEnvironmentNode(_ node: Node, modifier: any _EnvironmentModifierProtocol) {
+        var environment = node.environment
+        modifier._apply(to: &environment)
+        node.environment = environment
+
+        let childNode = buildNode(from: modifier._content)
+        node.addChild(childNode)
+        node.layout = { [weak node] proposal, _ in
+            guard let node = node, let firstChild = node.children.first else {
+                return (.zero, [])
+            }
+            let childLayout = LayoutChild(node: firstChild)
+            return (childLayout.sizeThatFits(proposal), [])
+        }
     }
 
     func applyLayout(_ node: Node, engine: any Layout) {
