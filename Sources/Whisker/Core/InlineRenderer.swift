@@ -21,40 +21,47 @@ final class InlineRenderer {
                 .filter { $0.position.y == row }
                 .sorted { $0.position.x < $1.position.x }
 
-            var line = ""
-            var currentStyle: Style?
-
-            var col = 0
-            for cmd in rowCommands {
-                if cmd.position.x > col {
-                    if currentStyle != nil {
-                        line += ANSI.reset
-                        currentStyle = nil
-                    }
-                    line += String(repeating: " ", count: cmd.position.x - col)
-                    col = cmd.position.x
-                }
-
-                if currentStyle == nil || currentStyle! != cmd.cell.style {
-                    line += ANSI.style(cmd.cell.style)
-                    currentStyle = cmd.cell.style
-                }
-
-                line += String(cmd.cell.char)
-                col += 1
-            }
-
-            line += ANSI.reset
-            line += "\u{1b}[K" // erase to end of line
-
-            backend.writeRaw(line)
+            backend.writeRaw(buildRowOutput(from: rowCommands))
             if row < contentHeight - 1 {
                 backend.writeRaw("\r\n")
             }
         }
 
         lastRenderedLineCount = contentHeight
+        positionCursor(focusedNode: focusedNode, contentHeight: contentHeight, backend: backend)
+        backend.flush()
+    }
 
+    private func buildRowOutput(from commands: [RenderCommand]) -> String {
+        var line = ""
+        var currentStyle: Style?
+        var col = 0
+
+        for cmd in commands {
+            if cmd.position.x > col {
+                if currentStyle != nil {
+                    line += ANSI.reset
+                    currentStyle = nil
+                }
+                line += String(repeating: " ", count: cmd.position.x - col)
+                col = cmd.position.x
+            }
+
+            if currentStyle == nil || currentStyle! != cmd.cell.style {
+                line += ANSI.style(cmd.cell.style)
+                currentStyle = cmd.cell.style
+            }
+
+            line += String(cmd.cell.char)
+            col += 1
+        }
+
+        line += ANSI.reset
+        line += "\u{1b}[K" // erase to end of line
+        return line
+    }
+
+    private func positionCursor(focusedNode: Node?, contentHeight: Int, backend: TerminalBackend) {
         if let focused = focusedNode,
            focused[.getText] != nil {
             let cursorX = focused.frame.x + (focused[.cursorPosition] ?? 0)
@@ -71,9 +78,7 @@ final class InlineRenderer {
             lastCursorContentRow = cursorY
         } else {
             backend.setCursorVisible(false)
-            lastCursorContentRow = max(0, contentHeight - 1) // Prevent negative row index
+            lastCursorContentRow = max(0, contentHeight - 1)
         }
-
-        backend.flush()
     }
 }

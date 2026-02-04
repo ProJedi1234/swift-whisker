@@ -21,7 +21,7 @@ public final class TestBackend: TerminalBackend, @unchecked Sendable {
     public func write(_ commands: [RenderCommand]) {
         for cmd in commands {
             if cmd.position.y >= 0 && cmd.position.y < _size.height &&
-               cmd.position.x >= 0 && cmd.position.x < _size.width {
+                cmd.position.x >= 0 && cmd.position.x < _size.width {
                 cells[cmd.position.y][cmd.position.x] = cmd.cell
             }
         }
@@ -65,7 +65,7 @@ public final class TestBackend: TerminalBackend, @unchecked Sendable {
     /// Get the cell at a position
     public func cell(at position: Position) -> Cell? {
         guard position.y >= 0 && position.y < _size.height &&
-              position.x >= 0 && position.x < _size.width else {
+                position.x >= 0 && position.x < _size.width else {
             return nil
         }
         return cells[position.y][position.x]

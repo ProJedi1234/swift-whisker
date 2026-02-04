@@ -66,6 +66,6 @@ extension Text: ExpressibleByStringLiteral {
 
 extension Text: ExpressibleByStringInterpolation {
     public init(stringInterpolation: DefaultStringInterpolation) {
-        self.init(String(stringInterpolation: stringInterpolation))
+        self.init(stringInterpolation.description)
     }
 }

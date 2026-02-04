@@ -31,6 +31,8 @@ public struct ViewBuilder {
         TupleView((v0, v1))
     }
 
+    // @resultBuilder type-erasure plumbing, not user-facing data
+    // swiftlint:disable large_tuple
     public static func buildBlock<V0: View, V1: View, V2: View>(
         _ v0: V0, _ v1: V1, _ v2: V2
     ) -> TupleView<(V0, V1, V2)> {
@@ -48,6 +50,7 @@ public struct ViewBuilder {
     ) -> TupleView<(V0, V1, V2, V3, V4)> {
         TupleView((v0, v1, v2, v3, v4))
     }
+    // swiftlint:enable large_tuple
 
     public static func buildOptional<V: View>(_ component: V?) -> V? {
         component

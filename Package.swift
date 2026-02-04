@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "Whisker",
     platforms: [
-        .macOS(.v13),
+        .macOS(.v13)
     ],
     products: [
         .library(
@@ -14,7 +14,7 @@ let package = Package(
         .executable(
             name: "Examples",
             targets: ["Examples"]
-        ),
+        )
     ],
     targets: [
         .target(
@@ -30,6 +30,6 @@ let package = Package(
             name: "WhiskerTests",
             dependencies: ["Whisker"],
             path: "Tests/WhiskerTests"
-        ),
+        )
     ]
 )
