@@ -14,6 +14,9 @@ extension NodeViewBuilder {
         } else if let toggle = view as? Toggle {
             buildToggleNode(node, toggle: toggle)
             return true
+        } else if let segmented = view as? SegmentedControl {
+            buildSegmentedControlNode(node, segmented: segmented)
+            return true
         }
         return false
     }
@@ -209,6 +212,75 @@ extension NodeViewBuilder {
 
         node.layout = { proposal, _ in
             let width = proposal.width.resolve(with: toggle.label.count + 4) // "[x] label"
+            return (Size(width: width, height: 1), [])
+        }
+    }
+
+    // MARK: - Segmented Control
+
+    private func buildSegmentedControlNode(_ node: Node, segmented: SegmentedControl) {
+        node.isFocusable = true
+
+        node[.keyHandler] = { (event: KeyEvent) in
+            let options = segmented.options
+            guard !options.isEmpty else { return }
+
+            let current = min(max(segmented.selection.wrappedValue, 0), options.count - 1)
+            var next = current
+
+            switch event.key {
+            case .left:
+                next = max(0, current - 1)
+            case .right:
+                next = min(options.count - 1, current + 1)
+            default:
+                return
+            }
+
+            if next != segmented.selection.wrappedValue {
+                segmented.selection.wrappedValue = next
+                Application.shared?.scheduleUpdate()
+            }
+        }
+
+        node.render = { [weak node] frame, buffer in
+            guard let node = node else { return }
+            let options = segmented.options
+            guard !options.isEmpty else { return }
+
+            let selectedIndex = min(max(segmented.selection.wrappedValue, 0), options.count - 1)
+            var cursorX = frame.x
+
+            for (index, option) in options.enumerated() {
+                let segmentText = " \(option) "
+                var style: Style = (index == selectedIndex)
+                    ? Style(foreground: .black, background: .white)
+                    : .default
+
+                if index == selectedIndex && node.isFocused {
+                    style = style.bold()
+                }
+
+                for char in segmentText {
+                    if cursorX >= frame.x + frame.width { return }
+                    buffer.draw(char, at: Position(x: cursorX, y: frame.y), style: style)
+                    cursorX += 1
+                }
+
+                if index < options.count - 1 {
+                    if cursorX >= frame.x + frame.width { return }
+                    buffer.draw(" ", at: Position(x: cursorX, y: frame.y), style: .default)
+                    cursorX += 1
+                }
+            }
+        }
+
+        node.layout = { proposal, _ in
+            let options = segmented.options
+            guard !options.isEmpty else { return (Size(width: 0, height: 1), []) }
+            let spacing = options.count > 1 ? (options.count - 1) : 0
+            let contentWidth = options.reduce(0) { $0 + $1.count + 2 } + spacing
+            let width = proposal.width.resolve(with: contentWidth)
             return (Size(width: width, height: 1), [])
         }
     }

@@ -217,4 +217,27 @@ final class WhiskerTests: XCTestCase {
         node[.keyHandler]?(KeyEvent(key: .backspace))
         XCTAssertEqual(text, "C")
     }
+
+    func testSegmentedControlKeyHandlingClampsSelection() {
+        var selection = 0
+        let control = SegmentedControl(
+            ["First", "Second", "Third"],
+            selection: Binding(get: { selection }, set: { selection = $0 })
+        )
+
+        let viewBuilder = NodeViewBuilder()
+        let node = viewBuilder.buildNode(from: control)
+
+        node[.keyHandler]?(KeyEvent(key: .left))
+        XCTAssertEqual(selection, 0)
+
+        node[.keyHandler]?(KeyEvent(key: .right))
+        XCTAssertEqual(selection, 1)
+
+        node[.keyHandler]?(KeyEvent(key: .right))
+        XCTAssertEqual(selection, 2)
+
+        node[.keyHandler]?(KeyEvent(key: .right))
+        XCTAssertEqual(selection, 2)
+    }
 }

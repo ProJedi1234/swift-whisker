@@ -14,11 +14,13 @@ final class FormState {
     var email = ""
     var password = ""
     var confirmPassword = ""
+    var planIndex = 0
     var message = ""
     var messageColor: Color = .white
 }
 
 let state = FormState()
+let plans = ["Free", "Pro", "Team"]
 
 let app = Application(mode: .inline) {
     VStack(alignment: .leading, spacing: 0) {
@@ -57,6 +59,15 @@ let app = Application(mode: .inline) {
                             set: { state.confirmPassword = $0 }))
         }
         HStack(spacing: 0) {
+            Text("? ").foregroundColor(.brightBlue)
+            Text("Plan? ").bold()
+            Text("› ").foregroundColor(.brightBlack)
+            SegmentedControl(plans, selection: Binding(
+                get: { state.planIndex },
+                set: { state.planIndex = $0 }
+            ))
+        }
+        HStack(spacing: 0) {
             Text("  ")
             Button("Submit") {
                 // Validate
@@ -73,7 +84,8 @@ let app = Application(mode: .inline) {
                     state.message = "  ✗ Passwords do not match"
                     state.messageColor = .red
                 } else {
-                    state.message = "  ✓ Welcome, \(state.name)!"
+                    let planName = plans.indices.contains(state.planIndex) ? plans[state.planIndex] : plans[0]
+                    state.message = "  ✓ Welcome, \(state.name)! (\(planName))"
                     state.messageColor = .green
                     Application.shared?.scheduleUpdate()
                     Application.shared?.quit()
