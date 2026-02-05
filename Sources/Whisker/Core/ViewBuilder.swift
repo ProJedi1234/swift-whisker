@@ -176,6 +176,10 @@ final class NodeViewBuilder {
     private func buildForEachNode(_ node: Node, forEach: any _ForEachProtocol, existing: Node?) {
         let children = forEach._views
         let existingChildren = existing?.children ?? []
+
+        // Reconciliation is currently positional for ForEach.
+        // This assumes stable ordering (or append-only updates); reorders
+        // and middle deletions may associate persistent state with new items.
         for (index, childView) in children.enumerated() {
             let existingChild = index < existingChildren.count ? existingChildren[index] : nil
             node.addChild(buildNode(from: childView, existing: existingChild))
