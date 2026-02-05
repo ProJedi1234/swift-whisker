@@ -6,7 +6,7 @@ public final class Node {
     var viewType: Any.Type
     var stateStorage: [String: Any] = [:]
     var persistentState: [String: Any] = [:]
-    var conditionalBranch: Bool? = nil
+    var conditionalBranch: Bool?
     var environment: EnvironmentValues = EnvironmentValues()
     var frame: Rect = .zero
     var needsRebuild: Bool = true
