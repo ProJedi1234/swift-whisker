@@ -264,6 +264,29 @@ final class WhiskerTests: XCTestCase {
         XCTAssertFalse(app.updateScheduled)
     }
 
+    func testStateBindingDoesNotRetainNode() {
+        struct BindingHost {
+            @State var value = ""
+        }
+
+        weak var weakNode: Node?
+        var binding: Binding<String>?
+
+        do {
+            let node = Node(viewType: EmptyView.self)
+            weakNode = node
+            NodeContext.current = node
+
+            let host = BindingHost()
+            binding = host.$value
+
+            NodeContext.current = nil
+        }
+
+        XCTAssertNil(weakNode)
+        XCTAssertEqual(binding?.wrappedValue, "")
+    }
+
     func testFocusTraversalOrder() {
         let root = Node(viewType: EmptyView.self)
         let container = Node(viewType: EmptyView.self)

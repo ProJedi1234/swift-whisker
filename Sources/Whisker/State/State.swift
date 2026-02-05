@@ -50,17 +50,27 @@ public struct State<Value: Equatable>: DynamicProperty {
     }
 
     public var projectedValue: Binding<Value> {
-        let capturedNode = resolvedNode
+        let box = self.box
+        let key = self.key
+        let initialValue = self.initialValue
+
+        func resolveNode() -> Node? {
+            let node = box.node ?? NodeContext.current
+            if node != nil && box.node == nil { box.node = node }
+            return node
+        }
+
         return Binding(
-            get: { [key, initialValue] in
-                capturedNode?.persistentState[key] as? Value ?? initialValue
+            get: {
+                guard let node = resolveNode() else { return initialValue }
+                return node.persistentState[key] as? Value ?? initialValue
             },
-            set: { [key] newValue in
-                guard let capturedNode else { return }
-                let oldValue = capturedNode.persistentState[key]
-                capturedNode.persistentState[key] = newValue
+            set: { newValue in
+                guard let node = resolveNode() else { return }
+                let oldValue = node.persistentState[key]
+                node.persistentState[key] = newValue
                 if !(oldValue as? Value == newValue) {
-                    capturedNode.needsRebuild = true
+                    node.needsRebuild = true
                     Application.shared?.scheduleUpdate()
                 }
             }
