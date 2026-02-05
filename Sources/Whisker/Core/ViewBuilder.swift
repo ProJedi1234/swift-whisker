@@ -1,5 +1,5 @@
 final class NodeViewBuilder {
-    func buildNode(from view: any View) -> Node {
+    func buildNode(from view: any View, existing: Node? = nil) -> Node {
         let node = Node(viewType: type(of: view))
 
         let previousNode = NodeContext.current
@@ -7,10 +7,15 @@ final class NodeViewBuilder {
         NodeContext.current = node
         defer { NodeContext.current = previousNode }
 
+        // Reconcile: copy persistent state from old node if types match
+        if let existing = existing, existing.viewType == node.viewType {
+            node.persistentState = existing.persistentState
+        }
+
         if !buildPrimitiveNode(node, from: view) &&
-            !buildContainerNode(node, from: view) &&
-            !buildControlNode(node, from: view) {
-            buildCompositeNode(node, view: view)
+            !buildContainerNode(node, from: view, existing: existing) &&
+            !buildControlNode(node, from: view, existing: existing) {
+            buildCompositeNode(node, view: view, existing: existing)
         }
 
         return node
@@ -81,38 +86,39 @@ final class NodeViewBuilder {
 
     // MARK: - Container Views
 
-    private func buildContainerNode(_ node: Node, from view: any View) -> Bool {
+    private func buildContainerNode(_ node: Node, from view: any View, existing: Node?) -> Bool {
         if let modifier = view as? any _EnvironmentModifierProtocol {
-            buildEnvironmentNode(node, modifier: modifier)
+            buildEnvironmentNode(node, modifier: modifier, existing: existing)
             return true
         } else if let vstack = view as? any _VStackProtocol {
-            buildVStackNode(node, content: vstack._content, alignment: vstack._alignment, spacing: vstack._spacing)
+            buildVStackNode(node, content: vstack._content, alignment: vstack._alignment, spacing: vstack._spacing, existing: existing)
             return true
         } else if let hstack = view as? any _HStackProtocol {
-            buildHStackNode(node, content: hstack._content, alignment: hstack._alignment, spacing: hstack._spacing)
+            buildHStackNode(node, content: hstack._content, alignment: hstack._alignment, spacing: hstack._spacing, existing: existing)
             return true
         } else if let zstack = view as? any _ZStackProtocol {
-            buildZStackNode(node, content: zstack._content, alignment: zstack._alignment)
+            buildZStackNode(node, content: zstack._content, alignment: zstack._alignment, existing: existing)
             return true
         } else if let forEach = view as? any _ForEachProtocol {
-            buildForEachNode(node, forEach: forEach)
+            buildForEachNode(node, forEach: forEach, existing: existing)
             return true
         } else if let conditional = view as? any _ConditionalViewProtocol {
-            buildConditionalNode(node, conditional: conditional)
+            buildConditionalNode(node, conditional: conditional, existing: existing)
             return true
         } else if let tupleView = view as? any _TupleViewProtocol {
-            buildTupleViewNode(node, tupleView: tupleView)
+            buildTupleViewNode(node, tupleView: tupleView, existing: existing)
             return true
         }
         return false
     }
 
-    private func buildEnvironmentNode(_ node: Node, modifier: any _EnvironmentModifierProtocol) {
+    private func buildEnvironmentNode(_ node: Node, modifier: any _EnvironmentModifierProtocol, existing: Node?) {
         var environment = node.environment
         modifier._apply(to: &environment)
         node.environment = environment
 
-        let childNode = buildNode(from: modifier._content)
+        let existingChild = existing?.children.first
+        let childNode = buildNode(from: modifier._content, existing: existingChild)
         node.addChild(childNode)
         node.layout = { [weak node] proposal, _ in
             guard let node = node, let firstChild = node.children.first else {
@@ -137,40 +143,61 @@ final class NodeViewBuilder {
         }
     }
 
-    private func buildVStackNode(_ node: Node, content: Any, alignment: HorizontalAlignment, spacing: Int) {
+    private func buildVStackNode(_ node: Node, content: Any, alignment: HorizontalAlignment, spacing: Int, existing: Node?) {
         let children = extractViews(from: content)
-        for childView in children {
-            node.addChild(buildNode(from: childView))
+        let existingChildren = existing?.children ?? []
+        for (index, childView) in children.enumerated() {
+            let existingChild = index < existingChildren.count ? existingChildren[index] : nil
+            node.addChild(buildNode(from: childView, existing: existingChild))
         }
         applyLayout(node, engine: VStackLayout(alignment: alignment, spacing: spacing))
     }
 
-    private func buildHStackNode(_ node: Node, content: Any, alignment: VerticalAlignment, spacing: Int) {
+    private func buildHStackNode(_ node: Node, content: Any, alignment: VerticalAlignment, spacing: Int, existing: Node?) {
         let children = extractViews(from: content)
-        for childView in children {
-            node.addChild(buildNode(from: childView))
+        let existingChildren = existing?.children ?? []
+        for (index, childView) in children.enumerated() {
+            let existingChild = index < existingChildren.count ? existingChildren[index] : nil
+            node.addChild(buildNode(from: childView, existing: existingChild))
         }
         applyLayout(node, engine: HStackLayout(alignment: alignment, spacing: spacing))
     }
 
-    private func buildZStackNode(_ node: Node, content: Any, alignment: Alignment) {
+    private func buildZStackNode(_ node: Node, content: Any, alignment: Alignment, existing: Node?) {
         let children = extractViews(from: content)
-        for childView in children {
-            node.addChild(buildNode(from: childView))
+        let existingChildren = existing?.children ?? []
+        for (index, childView) in children.enumerated() {
+            let existingChild = index < existingChildren.count ? existingChildren[index] : nil
+            node.addChild(buildNode(from: childView, existing: existingChild))
         }
         applyLayout(node, engine: ZStackLayout(alignment: alignment))
     }
 
-    private func buildForEachNode(_ node: Node, forEach: any _ForEachProtocol) {
+    private func buildForEachNode(_ node: Node, forEach: any _ForEachProtocol, existing: Node?) {
         let children = forEach._views
-        for childView in children {
-            node.addChild(buildNode(from: childView))
+        let existingChildren = existing?.children ?? []
+        for (index, childView) in children.enumerated() {
+            let existingChild = index < existingChildren.count ? existingChildren[index] : nil
+            node.addChild(buildNode(from: childView, existing: existingChild))
         }
         applyLayout(node, engine: VStackLayout(alignment: .leading, spacing: 0))
     }
 
-    private func buildConditionalNode(_ node: Node, conditional: any _ConditionalViewProtocol) {
-        let childNode = buildNode(from: conditional._activeView)
+    private func buildConditionalNode(_ node: Node, conditional: any _ConditionalViewProtocol, existing: Node?) {
+        let currentBranch = conditional._activeBranch
+        node.conditionalBranch = currentBranch
+
+        // Only pass existing child if branch matches
+        let existingChild: Node?
+        if let existing = existing,
+           existing.conditionalBranch == currentBranch,
+           let oldChild = existing.children.first {
+            existingChild = oldChild
+        } else {
+            existingChild = nil
+        }
+
+        let childNode = buildNode(from: conditional._activeView, existing: existingChild)
         node.addChild(childNode)
         node.layout = { [weak node] proposal, _ in
             guard let node = node, let firstChild = node.children.first else {
@@ -181,45 +208,38 @@ final class NodeViewBuilder {
         }
     }
 
-    private func buildTupleViewNode(_ node: Node, tupleView: any _TupleViewProtocol) {
+    private func buildTupleViewNode(_ node: Node, tupleView: any _TupleViewProtocol, existing: Node?) {
         let children = extractViews(from: tupleView._tupleValue)
-        for childView in children {
-            node.addChild(buildNode(from: childView))
+        let existingChildren = existing?.children ?? []
+        for (index, childView) in children.enumerated() {
+            let existingChild = index < existingChildren.count ? existingChildren[index] : nil
+            node.addChild(buildNode(from: childView, existing: existingChild))
         }
         applyLayout(node, engine: VStackLayout(alignment: .leading, spacing: 0))
     }
 
     // MARK: - Composite Views (fallback)
 
-    private func buildCompositeNode(_ node: Node, view: any View) {
-        let mirror = Mirror(reflecting: view)
-
-        if let value = mirror.children.first?.value {
-            if let tupleView = value as? any View {
-                let childNode = buildNode(from: tupleView)
-                node.addChild(childNode)
-            } else {
-                let views = extractViews(from: value)
-                for childView in views {
-                    let childNode = buildNode(from: childView)
-                    node.addChild(childNode)
-                }
-            }
+    private func buildCompositeNode(_ node: Node, view: any View, existing: Node?) {
+        func buildBody<V: View>(_ v: V) {
+            guard V.Body.self != Never.self else { return }
+            let body = v.body
+            let existingChild = existing?.children.first
+            let childNode = buildNode(from: body, existing: existingChild)
+            node.addChild(childNode)
         }
+        buildBody(view)
 
-        if node.children.count > 1 {
-            applyLayout(node, engine: VStackLayout(alignment: .leading, spacing: 0))
-        } else {
-            node.layout = { [weak node] proposal, _ in
-                guard let node = node, let firstChild = node.children.first else {
-                    return (.zero, [])
-                }
-                let childLayout = LayoutChild(node: firstChild)
-                let size = childLayout.sizeThatFits(proposal)
-                return (size, [])
+        node.layout = { [weak node] proposal, _ in
+            guard let node = node, let firstChild = node.children.first else {
+                return (.zero, [])
             }
+            let childLayout = LayoutChild(node: firstChild)
+            return (childLayout.sizeThatFits(proposal), [])
         }
     }
+
+    // MARK: - Helpers
 
     func extractViews(from value: Any) -> [any View] {
         if let tupleView = value as? any _TupleViewProtocol {

@@ -8,28 +8,39 @@ public enum NodeContext {
     public static var current: Node?
 }
 
-/// Property wrapper for local view state
+/// Property wrapper for local view state.
+/// Uses a class-based Box to capture the node reference on first access,
+/// enabling wrappedValue and projectedValue to work in closures outside the build pass.
 @propertyWrapper
 public struct State<Value: Equatable>: DynamicProperty {
+    private final class Box {
+        weak var node: Node?
+    }
+
+    private let box = Box()
     private let key: String
     private let initialValue: Value
 
-    public init(wrappedValue: Value, _ key: String = #function) {
+    public init(wrappedValue: Value, file: String = #fileID, line: Int = #line) {
         self.initialValue = wrappedValue
-        self.key = key
+        self.key = "\(file):\(line)"
+    }
+
+    private var resolvedNode: Node? {
+        let n = box.node ?? NodeContext.current
+        if n != nil && box.node == nil { box.node = n }
+        return n
     }
 
     public var wrappedValue: Value {
         get {
-            guard let node = NodeContext.current else {
-                return initialValue
-            }
-            return node.stateStorage[key] as? Value ?? initialValue
+            guard let node = resolvedNode else { return initialValue }
+            return node.persistentState[key] as? Value ?? initialValue
         }
         nonmutating set {
-            guard let node = NodeContext.current else { return }
-            let oldValue = node.stateStorage[key]
-            node.stateStorage[key] = newValue
+            guard let node = resolvedNode else { return }
+            let oldValue = node.persistentState[key]
+            node.persistentState[key] = newValue
 
             if !isEqual(oldValue, newValue) {
                 node.needsRebuild = true
@@ -39,9 +50,20 @@ public struct State<Value: Equatable>: DynamicProperty {
     }
 
     public var projectedValue: Binding<Value> {
-        Binding(
-            get: { wrappedValue },
-            set: { wrappedValue = $0 }
+        let capturedNode = resolvedNode
+        return Binding(
+            get: { [key, initialValue] in
+                capturedNode?.persistentState[key] as? Value ?? initialValue
+            },
+            set: { [key] newValue in
+                guard let capturedNode else { return }
+                let oldValue = capturedNode.persistentState[key]
+                capturedNode.persistentState[key] = newValue
+                if !(oldValue as? Value == newValue) {
+                    capturedNode.needsRebuild = true
+                    Application.shared?.scheduleUpdate()
+                }
+            }
         )
     }
 

@@ -1,12 +1,12 @@
 // MARK: - Control Views (TextField, SecureField, Button, Toggle)
 
 extension NodeViewBuilder {
-    func buildControlNode(_ node: Node, from view: any View) -> Bool {
+    func buildControlNode(_ node: Node, from view: any View, existing: Node?) -> Bool {
         if let textField = view as? TextField {
-            buildTextFieldNode(node, textField: textField)
+            buildTextFieldNode(node, textField: textField, existing: existing)
             return true
         } else if let secureField = view as? SecureField {
-            buildSecureFieldNode(node, secureField: secureField)
+            buildSecureFieldNode(node, secureField: secureField, existing: existing)
             return true
         } else if let button = view as? Button {
             buildButtonNode(node, button: button)
@@ -28,14 +28,21 @@ extension NodeViewBuilder {
         getText: @escaping () -> String,
         setText: @escaping (String) -> Void,
         placeholder: String,
-        isSecure: Bool
+        isSecure: Bool,
+        existing: Node? = nil
     ) {
         node.isFocusable = true
         node[.getText] = getText
         node[.setText] = setText
         node[.placeholder] = placeholder
-        node[.cursorPosition] = getText().count
         node[.isSecure] = isSecure
+
+        // Preserve cursor position from old node, or default to end of text
+        if let existing = existing, let oldCursor = existing[.cursorPosition] {
+            node[.cursorPosition] = min(oldCursor, getText().count)
+        } else {
+            node[.cursorPosition] = getText().count
+        }
 
         let secureFieldWidth = 20
 
@@ -136,23 +143,25 @@ extension NodeViewBuilder {
         }
     }
 
-    private func buildTextFieldNode(_ node: Node, textField: TextField) {
+    private func buildTextFieldNode(_ node: Node, textField: TextField, existing: Node?) {
         buildInputFieldNode(
             node,
             getText: textField.getText,
             setText: textField.setText,
             placeholder: textField.placeholder,
-            isSecure: false
+            isSecure: false,
+            existing: existing
         )
     }
 
-    private func buildSecureFieldNode(_ node: Node, secureField: SecureField) {
+    private func buildSecureFieldNode(_ node: Node, secureField: SecureField, existing: Node?) {
         buildInputFieldNode(
             node,
             getText: secureField.getText,
             setText: secureField.setText,
             placeholder: secureField.placeholder,
-            isSecure: true
+            isSecure: true,
+            existing: existing
         )
     }
 
