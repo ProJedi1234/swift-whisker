@@ -51,6 +51,7 @@ public struct State<Value: Equatable>: DynamicProperty {
 
     public var projectedValue: Binding<Value> {
         let box = self.box
+        if box.node == nil { box.node = NodeContext.current }
         let key = self.key
         let initialValue = self.initialValue
 

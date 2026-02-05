@@ -58,6 +58,47 @@ final class WhiskerIntegrationTests: XCTestCase {
         XCTAssertEqual(binding?.wrappedValue, "")
     }
 
+    func testStateBindingCapturedDuringBuildWorksOutsideBuildPass() {
+        struct BindingProbe: View {
+            @Binding var value: Int
+            let onBinding: (Binding<Int>) -> Void
+
+            init(value: Binding<Int>, onBinding: @escaping (Binding<Int>) -> Void) {
+                self._value = value
+                self.onBinding = onBinding
+                onBinding(value)
+            }
+
+            var body: some View { EmptyView() }
+        }
+
+        struct BindingHostView: View {
+            @State var value = 0
+            let onBinding: (Binding<Int>) -> Void
+
+            var body: some View {
+                BindingProbe(value: $value, onBinding: onBinding)
+            }
+        }
+
+        let viewBuilder = NodeViewBuilder()
+        var capturedBinding: Binding<Int>?
+
+        let node = viewBuilder.buildNode(from: BindingHostView(onBinding: { capturedBinding = $0 }))
+        XCTAssertNil(NodeContext.current)
+        XCTAssertNotNil(capturedBinding)
+
+        guard let binding = capturedBinding else {
+            XCTFail("Expected binding to be captured during build")
+            return
+        }
+
+        binding.wrappedValue = 7
+
+        XCTAssertEqual(binding.wrappedValue, 7)
+        XCTAssertTrue(node.persistentState.values.contains { ($0 as? Int) == 7 })
+    }
+
     func testFocusTraversalOrder() {
         let root = Node(viewType: EmptyView.self)
         let container = Node(viewType: EmptyView.self)
