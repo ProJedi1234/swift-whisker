@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import Whisker
 
 final class WhiskerTests: XCTestCase {
@@ -15,6 +16,15 @@ final class WhiskerTests: XCTestCase {
             }
         }
         return found
+    }
+
+    private func renderTree(_ node: Node, buffer: inout RenderBuffer) {
+        if let render = node.render {
+            render(node.frame, &buffer)
+        }
+        for child in node.children {
+            renderTree(child, buffer: &buffer)
+        }
     }
 
     // MARK: - Geometry Tests
@@ -38,7 +48,7 @@ final class WhiskerTests: XCTestCase {
 
         XCTAssertTrue(rect.contains(Position(x: 15, y: 15)))
         XCTAssertTrue(rect.contains(Position(x: 10, y: 10)))  // Top-left corner
-        XCTAssertFalse(rect.contains(Position(x: 30, y: 15))) // Right edge (exclusive)
+        XCTAssertFalse(rect.contains(Position(x: 30, y: 15)))  // Right edge (exclusive)
         XCTAssertFalse(rect.contains(Position(x: 5, y: 15)))  // Outside left
     }
 
@@ -102,7 +112,7 @@ final class WhiskerTests: XCTestCase {
 
         backend.write([
             RenderCommand(position: Position(x: 0, y: 0), cell: Cell(char: "H")),
-            RenderCommand(position: Position(x: 1, y: 0), cell: Cell(char: "i"))
+            RenderCommand(position: Position(x: 1, y: 0), cell: Cell(char: "i")),
         ])
 
         XCTAssertEqual(backend.text(atLine: 0), "Hi")
@@ -205,6 +215,26 @@ final class WhiskerTests: XCTestCase {
         XCTAssertEqual(style.foreground, .green)
     }
 
+    func testHStackClampsChildWidthsToBounds() {
+        let view = HStack(spacing: 1) {
+            Text("ThisIsAVeryLongText")
+            Text("Next")
+        }
+
+        let viewBuilder = NodeViewBuilder()
+        let root = viewBuilder.buildNode(from: view)
+        let bounds = Rect(x: 0, y: 0, width: 10, height: 1)
+
+        root.frame = bounds
+        root[.placeChildren]?(bounds)
+
+        var buffer = RenderBuffer()
+        renderTree(root, buffer: &buffer)
+
+        let maxX = buffer.commands.map { $0.position.x }.max() ?? 0
+        XCTAssertLessThan(maxX, bounds.width)
+    }
+
     // MARK: - Integration Tests
 
     func testStateChangeSchedulesUpdate() {
@@ -303,5 +333,161 @@ final class WhiskerTests: XCTestCase {
 
         node[.keyHandler]?(KeyEvent(key: .right))
         XCTAssertEqual(selection, 2)
+    }
+
+    func testHStackSizeThatFitsRespectsWidthConstraint() {
+        let layout = HStackLayout(spacing: 1)
+        let view = HStack(spacing: 1) {
+            Text("AAAAAAAAAA")
+            Text("BBBBBBBBBB")
+        }
+
+        let viewBuilder = NodeViewBuilder()
+        let root = viewBuilder.buildNode(from: view)
+        let children = root.children.map { LayoutChild(node: $0) }
+
+        let proposal = ProposedSize(width: .atMost(15), height: .exactly(1))
+        let size = layout.sizeThatFits(proposal: proposal, children: children)
+
+        XCTAssertLessThanOrEqual(size.width, 15)
+    }
+
+    func testSegmentedControlViewportShowsSelectedItem() {
+        var selection = 5
+        let options = [
+            "Alpha", "Bravo", "Charlie", "Delta", "Echo",
+            "Foxtrot", "Golf", "Hotel", "India", "Juliet",
+        ]
+        let control = SegmentedControl(
+            options,
+            selection: Binding(get: { selection }, set: { selection = $0 })
+        )
+
+        let viewBuilder = NodeViewBuilder()
+        let node = viewBuilder.buildNode(from: control)
+
+        let frameWidth = 30
+        let proposal = ProposedSize(width: .atMost(frameWidth), height: .exactly(1))
+        if let layoutFn = node.layout {
+            let (size, _) = layoutFn(proposal, node.children)
+            node.frame = Rect(x: 0, y: 0, width: size.width, height: size.height)
+        }
+
+        var buffer = RenderBuffer()
+        node.render?(node.frame, &buffer)
+
+        // The selected option "Foxtrot" should appear in the rendered output
+        let rendered = buffer.commands.map { String($0.cell.char) }.joined()
+        XCTAssertTrue(
+            rendered.contains("Foxtrot"),
+            "Selected item 'Foxtrot' should be visible in viewport, got: \(rendered)")
+    }
+
+    func testSegmentedControlWrapsSelectionWhenEnabled() {
+        var selection = 0
+        let control = SegmentedControl(
+            ["First", "Second", "Third"],
+            selection: Binding(get: { selection }, set: { selection = $0 }),
+            wraps: true
+        )
+
+        let viewBuilder = NodeViewBuilder()
+        let node = viewBuilder.buildNode(from: control)
+
+        node[.keyHandler]?(KeyEvent(key: .left))
+        XCTAssertEqual(selection, 2)
+
+        node[.keyHandler]?(KeyEvent(key: .right))
+        XCTAssertEqual(selection, 0)
+    }
+
+    func testSegmentedControlScrollShowsIndicators() {
+        var selection = 0
+        let options = [
+            "Alpha", "Bravo", "Charlie", "Delta", "Echo",
+            "Foxtrot", "Golf", "Hotel", "India", "Juliet",
+        ]
+        let control = SegmentedControl(
+            options,
+            selection: Binding(get: { selection }, set: { selection = $0 }),
+            overflow: .scroll
+        )
+
+        let viewBuilder = NodeViewBuilder()
+        let node = viewBuilder.buildNode(from: control)
+
+        let frameWidth = 30
+        let proposal = ProposedSize(width: .atMost(frameWidth), height: .exactly(1))
+        if let layoutFn = node.layout {
+            let (size, _) = layoutFn(proposal, node.children)
+            node.frame = Rect(x: 0, y: 0, width: size.width, height: size.height)
+        }
+
+        var buffer = RenderBuffer()
+        node.render?(node.frame, &buffer)
+
+        let rendered = buffer.commands.map { String($0.cell.char) }.joined()
+        // Right indicator should be present when scrolled to start
+        XCTAssertTrue(
+            rendered.contains("\u{203A}"),
+            "Right scroll indicator should appear, got: \(rendered)")
+    }
+
+    func testSegmentedControlWrapLayoutMultipleLines() {
+        var selection = 0
+        let options = ["Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot"]
+        let control = SegmentedControl(
+            options,
+            selection: Binding(get: { selection }, set: { selection = $0 }),
+            overflow: .wrap
+        )
+
+        let viewBuilder = NodeViewBuilder()
+        let node = viewBuilder.buildNode(from: control)
+
+        // Total content: " Alpha  Bravo  Charlie  Delta  Echo  Foxtrot " = ~50 chars
+        // With width 25 it should need multiple lines
+        let frameWidth = 25
+        let proposal = ProposedSize(width: .atMost(frameWidth), height: .unconstrained)
+        if let layoutFn = node.layout {
+            let (size, _) = layoutFn(proposal, node.children)
+            XCTAssertGreaterThan(
+                size.height, 1,
+                "Wrap mode should use multiple lines for wide content")
+            XCTAssertLessThanOrEqual(size.width, frameWidth)
+        }
+    }
+
+    func testSegmentedControlWrapRendersAcrossLines() {
+        var selection = 3
+        let options = ["Alpha", "Bravo", "Charlie", "Delta", "Echo"]
+        let control = SegmentedControl(
+            options,
+            selection: Binding(get: { selection }, set: { selection = $0 }),
+            overflow: .wrap
+        )
+
+        let viewBuilder = NodeViewBuilder()
+        let node = viewBuilder.buildNode(from: control)
+
+        let frameWidth = 25
+        let proposal = ProposedSize(width: .atMost(frameWidth), height: .unconstrained)
+        if let layoutFn = node.layout {
+            let (size, _) = layoutFn(proposal, node.children)
+            node.frame = Rect(x: 0, y: 0, width: size.width, height: size.height)
+        }
+
+        var buffer = RenderBuffer()
+        node.render?(node.frame, &buffer)
+
+        // Verify content spans multiple y-coordinates
+        let ys = Set(buffer.commands.map { $0.position.y })
+        XCTAssertGreaterThan(ys.count, 1, "Wrap mode should render across multiple lines")
+
+        // Selected item "Delta" should appear in the output
+        let rendered = buffer.commands.map { String($0.cell.char) }.joined()
+        XCTAssertTrue(
+            rendered.contains("Delta"),
+            "Selected item should be visible in wrapped output, got: \(rendered)")
     }
 }
