@@ -32,7 +32,7 @@ public struct ViewBuilder {
     }
 
     // @resultBuilder type-erasure plumbing, not user-facing data
-    // swiftlint:disable large_tuple
+    // swiftlint:disable large_tuple function_parameter_count
     public static func buildBlock<V0: View, V1: View, V2: View>(
         _ v0: V0, _ v1: V1, _ v2: V2
     ) -> TupleView<(V0, V1, V2)> {
@@ -50,7 +50,6 @@ public struct ViewBuilder {
     ) -> TupleView<(V0, V1, V2, V3, V4)> {
         TupleView((v0, v1, v2, v3, v4))
     }
-    // swiftlint:enable large_tuple
 
     public static func buildBlock<V0: View, V1: View, V2: View, V3: View, V4: View, V5: View>(
         _ v0: V0, _ v1: V1, _ v2: V2, _ v3: V3, _ v4: V4, _ v5: V5
@@ -58,7 +57,9 @@ public struct ViewBuilder {
         TupleView((v0, v1, v2, v3, v4, v5))
     }
 
-    public static func buildBlock<V0: View, V1: View, V2: View, V3: View, V4: View, V5: View, V6: View>(
+    public static func buildBlock<
+        V0: View, V1: View, V2: View, V3: View, V4: View, V5: View, V6: View
+    >(
         _ v0: V0, _ v1: V1, _ v2: V2, _ v3: V3, _ v4: V4, _ v5: V5, _ v6: V6
     ) -> TupleView<(V0, V1, V2, V3, V4, V5, V6)> {
         TupleView((v0, v1, v2, v3, v4, v5, v6))
@@ -81,12 +82,15 @@ public struct ViewBuilder {
     }
 
     public static func buildBlock<
-        V0: View, V1: View, V2: View, V3: View, V4: View, V5: View, V6: View, V7: View, V8: View, V9: View
+        V0: View, V1: View, V2: View, V3: View, V4: View, V5: View, V6: View, V7: View, V8: View,
+        V9: View
     >(
-        _ v0: V0, _ v1: V1, _ v2: V2, _ v3: V3, _ v4: V4, _ v5: V5, _ v6: V6, _ v7: V7, _ v8: V8, _ v9: V9
+        _ v0: V0, _ v1: V1, _ v2: V2, _ v3: V3, _ v4: V4, _ v5: V5, _ v6: V6, _ v7: V7, _ v8: V8,
+        _ v9: V9
     ) -> TupleView<(V0, V1, V2, V3, V4, V5, V6, V7, V8, V9)> {
         TupleView((v0, v1, v2, v3, v4, v5, v6, v7, v8, v9))
     }
+    // swiftlint:enable large_tuple function_parameter_count
 
     public static func buildOptional<V: View>(_ component: V?) -> V? {
         component

@@ -26,7 +26,7 @@ let plans = [
     "Marble", "Cinder", "Puddle", "Sprocket", "Velvet", "Chroma", "Tangle",
     "Mosaic", "Cobalt", "Topaz", "Quasar", "Ramble", "Fable", "Driftwood",
     "Starlight", "Hammock", "Telemetry", "Windmill", "Whirligig", "Sundial",
-    "Thunderclap", "Peppercorn", "Kaleidoscope", "Foghorn", "Huckleberry",
+    "Thunderclap", "Peppercorn", "Kaleidoscope", "Foghorn", "Huckleberry"
 ]
 
 let app = Application(mode: .inline) {
