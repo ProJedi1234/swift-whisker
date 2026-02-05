@@ -133,18 +133,27 @@ public struct TupleView<T>: View, _TupleViewProtocol {
 /// Internal protocol so NodeViewBuilder can detect any ConditionalView regardless of generic parameters
 protocol _ConditionalViewProtocol {
     var _activeView: any View { get }
+    var _activeBranch: Bool { get }
 }
 
 /// Represents an if/else in ViewBuilder
 public enum ConditionalView<TrueView: View, FalseView: View>: View, _ConditionalViewProtocol {
+    case trueView(TrueView)
+    case falseView(FalseView)
+
     var _activeView: any View {
         switch self {
         case .trueView(let view): return view
         case .falseView(let view): return view
         }
     }
-    case trueView(TrueView)
-    case falseView(FalseView)
+
+    var _activeBranch: Bool {
+        switch self {
+        case .trueView: return true
+        case .falseView: return false
+        }
+    }
 
     public typealias Body = Never
 

@@ -137,7 +137,8 @@ public final class Application {
 
     private func rebuild() {
         let view = rootViewBuilder()
-        rootNode = viewBuilder.buildNode(from: view)
+        let oldRoot = rootNode
+        rootNode = viewBuilder.buildNode(from: view, existing: oldRoot)
 
         let terminalSize = backend.size
         if let root = rootNode {
