@@ -42,7 +42,7 @@ public struct State<Value: Equatable>: DynamicProperty {
             let oldValue = node.persistentState[key]
             node.persistentState[key] = newValue
 
-            if !isEqual(oldValue, newValue) {
+            if !Self.isEqual(oldValue, newValue) {
                 node.needsRebuild = true
                 Application.shared?.scheduleUpdate()
             }
@@ -69,7 +69,7 @@ public struct State<Value: Equatable>: DynamicProperty {
                 guard let node = resolveNode() else { return }
                 let oldValue = node.persistentState[key]
                 node.persistentState[key] = newValue
-                if !(oldValue as? Value == newValue) {
+                if !Self.isEqual(oldValue, newValue) {
                     node.needsRebuild = true
                     Application.shared?.scheduleUpdate()
                 }
@@ -77,7 +77,7 @@ public struct State<Value: Equatable>: DynamicProperty {
         )
     }
 
-    private func isEqual(_ lhs: Any?, _ rhs: Value) -> Bool {
+    private static func isEqual(_ lhs: Any?, _ rhs: Value) -> Bool {
         guard let lhs = lhs as? Value else { return false }
         return lhs == rhs
     }
