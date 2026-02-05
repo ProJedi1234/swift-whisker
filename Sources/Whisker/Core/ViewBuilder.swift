@@ -74,7 +74,11 @@ final class NodeViewBuilder {
         }
 
         node.layout = { proposal, _ in
-            let width = proposal.width.resolve(with: 1)
+            let width: Int
+            switch proposal.width {
+            case .atMost(let v), .exactly(let v): width = v
+            case .unconstrained: width = 1
+            }
             return (Size(width: width, height: 1), [])
         }
     }

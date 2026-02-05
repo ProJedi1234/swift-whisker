@@ -74,7 +74,7 @@ public struct VStackLayout: Layout {
         for child in children {
             let childSize = child.sizeThatFits(
                 ProposedSize(
-                    width: .exactly(bounds.width),
+                    width: .atMost(bounds.width),
                     height: .unconstrained
                 ))
 
@@ -145,7 +145,7 @@ public struct HStackLayout: Layout {
             let childSize = child.sizeThatFits(
                 ProposedSize(
                     width: .atMost(remainingWidth),
-                    height: .exactly(bounds.height)
+                    height: .atMost(bounds.height)
                 ))
 
             let y: Int
@@ -196,7 +196,11 @@ public struct ZStackLayout: Layout {
 
     public func placeChildren(in bounds: Rect, children: [LayoutChild]) {
         for child in children {
-            let childSize = child.sizeThatFits(ProposedSize(bounds.size))
+            let childSize = child.sizeThatFits(
+                ProposedSize(
+                    width: .atMost(bounds.width),
+                    height: .atMost(bounds.height)
+                ))
 
             let x: Int
             switch alignment.horizontal {
