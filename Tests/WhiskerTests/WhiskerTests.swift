@@ -1,10 +1,30 @@
 import XCTest
+
 @testable import Whisker
 
 final class WhiskerTests: XCTestCase {
     private struct CounterView: View {
         @State var count = 0
         var body: some View { Text("\(count)") }
+    }
+
+    private func firstTextNode(in root: Node) -> Node? {
+        var found: Node?
+        root.traverse { node in
+            if found == nil && node.viewType == Text.self {
+                found = node
+            }
+        }
+        return found
+    }
+
+    private func renderTree(_ node: Node, buffer: inout RenderBuffer) {
+        if let render = node.render {
+            render(node.frame, &buffer)
+        }
+        for child in node.children {
+            renderTree(child, buffer: &buffer)
+        }
     }
 
     // MARK: - Geometry Tests
@@ -28,7 +48,7 @@ final class WhiskerTests: XCTestCase {
 
         XCTAssertTrue(rect.contains(Position(x: 15, y: 15)))
         XCTAssertTrue(rect.contains(Position(x: 10, y: 10)))  // Top-left corner
-        XCTAssertFalse(rect.contains(Position(x: 30, y: 15))) // Right edge (exclusive)
+        XCTAssertFalse(rect.contains(Position(x: 30, y: 15)))  // Right edge (exclusive)
         XCTAssertFalse(rect.contains(Position(x: 5, y: 15)))  // Outside left
     }
 
@@ -141,6 +161,80 @@ final class WhiskerTests: XCTestCase {
         XCTAssertNotNil(forEach)
     }
 
+    func testEnvironmentStylesCascadeToText() {
+        let view = VStack {
+            Text("A")
+        }
+        .foregroundColor(.red)
+        .bold()
+
+        let viewBuilder = NodeViewBuilder()
+        let root = viewBuilder.buildNode(from: view)
+
+        guard let textNode = firstTextNode(in: root) else {
+            XCTFail("Expected to find a Text node")
+            return
+        }
+
+        textNode.frame = Rect(x: 0, y: 0, width: 10, height: 1)
+        var buffer = RenderBuffer()
+        textNode.render?(textNode.frame, &buffer)
+
+        guard let style = buffer.commands.first?.cell.style else {
+            XCTFail("Expected rendered text style")
+            return
+        }
+
+        XCTAssertEqual(style.foreground, .red)
+        XCTAssertTrue(style.attributes.contains(.bold))
+    }
+
+    func testEnvironmentForegroundDoesNotOverrideExplicitTextColor() {
+        let view = VStack {
+            Text("A").foregroundColor(.green)
+        }
+        .foregroundColor(.red)
+
+        let viewBuilder = NodeViewBuilder()
+        let root = viewBuilder.buildNode(from: view)
+
+        guard let textNode = firstTextNode(in: root) else {
+            XCTFail("Expected to find a Text node")
+            return
+        }
+
+        textNode.frame = Rect(x: 0, y: 0, width: 10, height: 1)
+        var buffer = RenderBuffer()
+        textNode.render?(textNode.frame, &buffer)
+
+        guard let style = buffer.commands.first?.cell.style else {
+            XCTFail("Expected rendered text style")
+            return
+        }
+
+        XCTAssertEqual(style.foreground, .green)
+    }
+
+    func testHStackClampsChildWidthsToBounds() {
+        let view = HStack(spacing: 1) {
+            Text("ThisIsAVeryLongText")
+            Text("Next")
+        }
+
+        let viewBuilder = NodeViewBuilder()
+        let root = viewBuilder.buildNode(from: view)
+        let bounds = Rect(x: 0, y: 0, width: 10, height: 1)
+
+        root.frame = bounds
+        root[.placeChildren]?(bounds)
+
+        var buffer = RenderBuffer()
+        renderTree(root, buffer: &buffer)
+
+        let maxX = buffer.commands.map { $0.position.x }.max() ?? 0
+        XCTAssertLessThan(maxX, bounds.width)
+    }
+
     // MARK: - Integration Tests
 
     func testStateChangeSchedulesUpdate() {
@@ -217,4 +311,5 @@ final class WhiskerTests: XCTestCase {
         node[.keyHandler]?(KeyEvent(key: .backspace))
         XCTAssertEqual(text, "C")
     }
+
 }

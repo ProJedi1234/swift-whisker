@@ -49,10 +49,11 @@ public struct VStackLayout: Layout {
         var maxWidth = 0
 
         for (index, var child) in children.enumerated() {
-            let childSize = child.sizeThatFits(ProposedSize(
-                width: proposal.width,
-                height: .unconstrained
-            ))
+            let childSize = child.sizeThatFits(
+                ProposedSize(
+                    width: proposal.width,
+                    height: .unconstrained
+                ))
             child.size = childSize
             maxWidth = max(maxWidth, childSize.width)
             totalHeight += childSize.height
@@ -71,10 +72,11 @@ public struct VStackLayout: Layout {
         var y = bounds.y
 
         for child in children {
-            let childSize = child.sizeThatFits(ProposedSize(
-                width: .exactly(bounds.width),
-                height: .unconstrained
-            ))
+            let childSize = child.sizeThatFits(
+                ProposedSize(
+                    width: .exactly(bounds.width),
+                    height: .unconstrained
+                ))
 
             let x: Int
             switch alignment {
@@ -105,11 +107,22 @@ public struct HStackLayout: Layout {
         var totalWidth = 0
         var maxHeight = 0
 
+        let budgetWidth = proposal.width.value
+
         for (index, var child) in children.enumerated() {
-            let childSize = child.sizeThatFits(ProposedSize(
-                width: .unconstrained,
-                height: proposal.height
-            ))
+            let childWidthConstraint: SizeConstraint
+            if let budget = budgetWidth {
+                let remaining = max(0, budget - totalWidth)
+                childWidthConstraint = .atMost(remaining)
+            } else {
+                childWidthConstraint = .unconstrained
+            }
+
+            let childSize = child.sizeThatFits(
+                ProposedSize(
+                    width: childWidthConstraint,
+                    height: proposal.height
+                ))
             child.size = childSize
             maxHeight = max(maxHeight, childSize.height)
             totalWidth += childSize.width
@@ -127,11 +140,13 @@ public struct HStackLayout: Layout {
     public func placeChildren(in bounds: Rect, children: [LayoutChild]) {
         var x = bounds.x
 
-        for child in children {
-            let childSize = child.sizeThatFits(ProposedSize(
-                width: .unconstrained,
-                height: .exactly(bounds.height)
-            ))
+        for (index, child) in children.enumerated() {
+            let remainingWidth = max(0, (bounds.x + bounds.width) - x)
+            let childSize = child.sizeThatFits(
+                ProposedSize(
+                    width: .atMost(remainingWidth),
+                    height: .exactly(bounds.height)
+                ))
 
             let y: Int
             switch alignment {
@@ -144,7 +159,13 @@ public struct HStackLayout: Layout {
             }
 
             child.node.frame = Rect(x: x, y: y, width: childSize.width, height: childSize.height)
-            x += childSize.width + spacing
+            x += childSize.width
+
+            if index < children.count - 1 && x < bounds.x + bounds.width {
+                let remainingAfterChild = max(0, (bounds.x + bounds.width) - x)
+                let appliedSpacing = min(spacing, remainingAfterChild)
+                x += appliedSpacing
+            }
         }
     }
 }

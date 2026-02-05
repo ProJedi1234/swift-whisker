@@ -14,6 +14,9 @@ extension NodeViewBuilder {
         } else if let toggle = view as? Toggle {
             buildToggleNode(node, toggle: toggle)
             return true
+        } else if let segmented = view as? SegmentedControl {
+            buildSegmentedControlNode(node, segmented: segmented)
+            return true
         }
         return false
     }
@@ -54,7 +57,8 @@ extension NodeViewBuilder {
         return { [weak node] (event: KeyEvent) in
             guard let node = node else { return }
             guard let getText = node[.getText],
-                  let setText = node[.setText] else { return }
+                let setText = node[.setText]
+            else { return }
 
             var text = getText()
             var cursor = node[.cursorPosition] ?? text.count
@@ -98,7 +102,9 @@ extension NodeViewBuilder {
         }
     }
 
-    private func makeInputFieldRenderClosure(for node: Node, isSecure: Bool) -> (Rect, inout RenderBuffer) -> Void {
+    private func makeInputFieldRenderClosure(for node: Node, isSecure: Bool) -> (
+        Rect, inout RenderBuffer
+    ) -> Void {
         return { [weak node] frame, buffer in
             guard let node = node else { return }
             let text = node[.getText]?() ?? ""
@@ -113,9 +119,16 @@ extension NodeViewBuilder {
                 displayText = text
             }
 
-            let style: Style = text.isEmpty
-                ? Style(foreground: .brightBlack)
-                : .default
+            var style: Style
+            if text.isEmpty {
+                style = Style().resolved(
+                    with: node.environment,
+                    fallbackForeground: .brightBlack
+                )
+                style.attributes.insert(.dim)
+            } else {
+                style = Style().resolved(with: node.environment)
+            }
 
             for (i, char) in displayText.prefix(frame.width).enumerated() {
                 buffer.draw(char, at: Position(x: frame.x + i, y: frame.y), style: style)
@@ -163,9 +176,14 @@ extension NodeViewBuilder {
             guard let node = node else { return }
             let label = node[.label] ?? "Button"
 
-            let style: Style = node.isFocused
-                ? Style(foreground: .black, background: .white, attributes: [.bold])
-                : Style(foreground: .white)
+            var style = Style().resolved(
+                with: node.environment,
+                fallbackForeground: .white
+            )
+            if node.isFocused {
+                style.attributes.insert(.reverse)
+                style.attributes.insert(.bold)
+            }
 
             let text = "[ \(label) ]"
             for (i, char) in text.prefix(frame.width).enumerated() {
@@ -175,7 +193,7 @@ extension NodeViewBuilder {
 
         node.layout = { proposal, _ in
             let label = button.label
-            let width = proposal.width.resolve(with: label.count + 4) // "[ label ]"
+            let width = proposal.width.resolve(with: label.count + 4)  // "[ label ]"
             return (Size(width: width, height: 1), [])
         }
     }
@@ -198,9 +216,11 @@ extension NodeViewBuilder {
             let indicator = isOn ? "[x]" : "[ ]"
             let text = "\(indicator) \(toggle.label)"
 
-            let style: Style = node.isFocused
-                ? Style(foreground: .black, background: .white, attributes: [.bold])
-                : .default
+            var style = Style().resolved(with: node.environment)
+            if node.isFocused {
+                style.attributes.insert(.reverse)
+                style.attributes.insert(.bold)
+            }
 
             for (i, char) in text.prefix(frame.width).enumerated() {
                 buffer.draw(char, at: Position(x: frame.x + i, y: frame.y), style: style)
@@ -208,8 +228,9 @@ extension NodeViewBuilder {
         }
 
         node.layout = { proposal, _ in
-            let width = proposal.width.resolve(with: toggle.label.count + 4) // "[x] label"
+            let width = proposal.width.resolve(with: toggle.label.count + 4)  // "[x] label"
             return (Size(width: width, height: 1), [])
         }
     }
+
 }
