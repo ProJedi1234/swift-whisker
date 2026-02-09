@@ -17,6 +17,8 @@ public final class Application {
     var focusedIndex: Int = 0
     var updateScheduled = false
     var isRunning = false
+    var animationTickCount = 0
+    private var nextScheduledUpdate: Double = 0
     let rootViewBuilder: () -> any View
 
     private let viewBuilder = NodeViewBuilder()
@@ -54,6 +56,15 @@ public final class Application {
         updateScheduled = true
     }
 
+    /// Schedule an update to occur after a delay (in seconds).
+    /// If multiple delayed updates are scheduled, the earliest one wins.
+    public func scheduleUpdate(after delay: TimeInterval) {
+        let target = Date().timeIntervalSinceReferenceDate + delay
+        if nextScheduledUpdate == 0 || target < nextScheduledUpdate {
+            nextScheduledUpdate = target
+        }
+    }
+
     public func quit() {
         isRunning = false
     }
@@ -68,6 +79,19 @@ public final class Application {
                 updateScheduled = false
                 rebuild()
                 render()
+            }
+
+            // Keep updating while animated views are present
+            if animationTickCount > 0 {
+                updateScheduled = true
+            }
+
+            // Fire delayed updates when their time arrives
+            if nextScheduledUpdate > 0
+                && Date().timeIntervalSinceReferenceDate >= nextScheduledUpdate
+            {
+                nextScheduledUpdate = 0
+                updateScheduled = true
             }
 
             // Small sleep to avoid busy-waiting
@@ -136,6 +160,7 @@ public final class Application {
     }
 
     private func rebuild() {
+        animationTickCount = 0
         let view = rootViewBuilder()
         let oldRoot = rootNode
         rootNode = viewBuilder.buildNode(from: view, existing: oldRoot)

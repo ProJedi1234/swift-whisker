@@ -35,6 +35,9 @@ final class NodeViewBuilder {
         } else if view is Divider {
             buildDividerNode(node)
             return true
+        } else if let indicator = view as? ActivityIndicator {
+            buildActivityIndicatorNode(node, indicator: indicator)
+            return true
         }
         return false
     }
@@ -85,6 +88,24 @@ final class NodeViewBuilder {
             case .unconstrained: width = 1
             }
             return (Size(width: width, height: 1), [])
+        }
+    }
+
+    private func buildActivityIndicatorNode(_ node: Node, indicator: ActivityIndicator) {
+        Application.shared?.animationTickCount += 1
+
+        node.render = { [weak node] frame, buffer in
+            guard let node = node else { return }
+            let style = Style().resolved(with: node.environment)
+            let frameIndex = indicator.currentFrameIndex()
+            let char = ActivityIndicator.frames[frameIndex]
+            buffer.draw(char, at: Position(x: frame.x, y: frame.y), style: style)
+        }
+
+        node.layout = { proposal, _ in
+            let width = proposal.width.resolve(with: 1)
+            let height = proposal.height.resolve(with: 1)
+            return (Size(width: width, height: height), [])
         }
     }
 
