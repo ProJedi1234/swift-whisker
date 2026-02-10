@@ -18,8 +18,11 @@ public final class Application {
     var updateScheduled = false
     var isRunning = false
     var animationTickCount = 0
-    private var nextScheduledUpdate: Double = 0
     let rootViewBuilder: () -> any View
+
+    /// Lock for synchronizing @State mutations from async contexts (e.g. .task closures)
+    /// against the single-threaded rebuild pass. Uncontended in the common synchronous case.
+    let stateLock = NSLock()
 
     private let viewBuilder = NodeViewBuilder()
     private let inlineRenderer = InlineRenderer()
@@ -56,17 +59,9 @@ public final class Application {
         updateScheduled = true
     }
 
-    /// Schedule an update to occur after a delay (in seconds).
-    /// If multiple delayed updates are scheduled, the earliest one wins.
-    public func scheduleUpdate(after delay: TimeInterval) {
-        let target = Date().timeIntervalSinceReferenceDate + delay
-        if nextScheduledUpdate == 0 || target < nextScheduledUpdate {
-            nextScheduledUpdate = target
-        }
-    }
-
     public func quit() {
         isRunning = false
+        rootNode?.cancelTasksRecursively()
     }
 
     private func runLoop() {
@@ -83,14 +78,6 @@ public final class Application {
 
             // Keep updating while animated views are present
             if animationTickCount > 0 {
-                updateScheduled = true
-            }
-
-            // Fire delayed updates when their time arrives
-            if nextScheduledUpdate > 0
-                && Date().timeIntervalSinceReferenceDate >= nextScheduledUpdate
-            {
-                nextScheduledUpdate = 0
                 updateScheduled = true
             }
 

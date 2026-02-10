@@ -1,3 +1,5 @@
+import Foundation
+
 final class NodeViewBuilder {
     func buildNode(from view: any View, existing: Node? = nil) -> Node {
         let node = Node(viewType: type(of: view))
@@ -10,7 +12,15 @@ final class NodeViewBuilder {
         // Reconcile: copy persistent state from old node if types match
         if let existing = existing, existing.viewType == node.viewType {
             node.persistentState = existing.persistentState
+        } else if let existing = existing {
+            // View type changed — cancel any async tasks in the old subtree
+            existing.cancelTasksRecursively()
         }
+
+        // Eagerly resolve all @State properties so their Boxes capture the
+        // current node's PersistentStateStorage. This is necessary for .task
+        // closures that capture @State but don't read it during the build pass.
+        resolveStateProperties(of: view)
 
         if !buildPrimitiveNode(node, from: view) &&
             !buildContainerNode(node, from: view, existing: existing) &&
@@ -115,6 +125,9 @@ final class NodeViewBuilder {
         if let modifier = view as? any _EnvironmentModifierProtocol {
             buildEnvironmentNode(node, modifier: modifier, existing: existing)
             return true
+        } else if let taskMod = view as? any _TaskModifierProtocol {
+            buildTaskModifierNode(node, modifier: taskMod, existing: existing)
+            return true
         } else if let vstack = view as? any _VStackProtocol {
             buildVStackNode(node, content: vstack._content, alignment: vstack._alignment, spacing: vstack._spacing, existing: existing)
             return true
@@ -152,6 +165,48 @@ final class NodeViewBuilder {
             let childLayout = LayoutChild(node: firstChild)
             return (childLayout.sizeThatFits(proposal), [])
         }
+    }
+
+    private func buildTaskModifierNode(_ node: Node, modifier: any _TaskModifierProtocol, existing: Node?) {
+        // Build child content (pass through, same as EnvironmentModifier)
+        let existingChild = existing?.children.first
+        let childNode = buildNode(from: modifier._content, existing: existingChild)
+        node.addChild(childNode)
+
+        // Passthrough layout — the modifier is invisible, child determines size
+        node.layout = { [weak node] proposal, _ in
+            guard let node = node, let firstChild = node.children.first else {
+                return (.zero, [])
+            }
+            let childLayout = LayoutChild(node: firstChild)
+            return (childLayout.sizeThatFits(proposal), [])
+        }
+
+        // Task lifecycle: start a new task if this is a fresh appearance,
+        // or if the task ID changed (for .task(id:) variant).
+        // Use two keys: one for the task ID, one to track whether the task
+        // has already been started (so we don't re-spawn after it completes).
+        let taskIDKey = "_task_id"
+        let taskStartedKey = "_task_started"
+        let currentID = modifier._taskID
+        let previousID = existing?.persistentState[taskIDKey] as? String
+        let wasStarted = existing?.persistentState[taskStartedKey] as? Bool ?? false
+
+        if previousID == currentID && wasStarted {
+            // Same ID, task already started — carry forward (may still be running or finished)
+            node.activeTask = existing?.activeTask
+        } else {
+            // New appearance or ID changed — cancel old task if any, start new one
+            existing?.cancelTask()
+
+            let taskBody = modifier._taskBody
+            node.activeTask = Task {
+                await taskBody()
+            }
+        }
+
+        node.persistentState[taskIDKey] = currentID
+        node.persistentState[taskStartedKey] = true
     }
 
     func applyLayout(_ node: Node, engine: any Layout) {
@@ -223,6 +278,8 @@ final class NodeViewBuilder {
            let oldChild = existing.children.first {
             existingChild = oldChild
         } else {
+            // Branch changed — cancel any async tasks in the old subtree
+            existing?.children.first?.cancelTasksRecursively()
             existingChild = nil
         }
 
@@ -265,6 +322,22 @@ final class NodeViewBuilder {
             }
             let childLayout = LayoutChild(node: firstChild)
             return (childLayout.sizeThatFits(proposal), [])
+        }
+    }
+
+    // MARK: - State Resolution
+
+    /// Walk the view struct using Mirror and call _resolveStorage() on every
+    /// @State (DynamicProperty) found. This ensures each @State's Box captures
+    /// the current node's PersistentStateStorage while NodeContext.current is set.
+    /// Without this, @State properties that are only used inside .task closures
+    /// (and never read during body evaluation) would fail to resolve.
+    private func resolveStateProperties(of view: any View) {
+        let mirror = Mirror(reflecting: view)
+        for child in mirror.children {
+            if let prop = child.value as? any DynamicProperty {
+                prop._resolveStorage()
+            }
         }
     }
 

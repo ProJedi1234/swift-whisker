@@ -9,11 +9,26 @@ public enum NodeContext {
 }
 
 /// Property wrapper for local view state.
-/// Uses a class-based Box to capture the node reference on first access,
-/// enabling wrappedValue and projectedValue to work in closures outside the build pass.
+/// Uses a class-based Box to capture a strong reference to the node's
+/// PersistentStateStorage on first access. Because PersistentStateStorage is
+/// a reference type shared between old and new nodes during reconciliation,
+/// async .task closures that captured @State can still write to the correct
+/// storage even after the node tree has been rebuilt.
+///
+/// Thread safety: State mutations are protected by Application.stateLock so that
+/// .task closures running on background threads can safely update @State.
 @propertyWrapper
 public struct State<Value: Equatable>: DynamicProperty {
-    private final class Box {
+    // @unchecked Sendable because access is synchronized via Application.stateLock
+    private final class Box: @unchecked Sendable {
+        /// Strong reference to the persistent state storage. Because this is a
+        /// reference type, it remains valid and shared even after node reconciliation
+        /// replaces the old node with a new one — both point to the same storage.
+        var storage: PersistentStateStorage?
+
+        /// Weak reference to the node, used only for setting needsRebuild.
+        /// May become nil after reconciliation, but that's fine — the rebuild
+        /// will be triggered via scheduleUpdate() regardless.
         weak var node: Node?
     }
 
@@ -26,24 +41,47 @@ public struct State<Value: Equatable>: DynamicProperty {
         self.key = "\(file):\(line)"
     }
 
-    private var resolvedNode: Node? {
-        let n = box.node ?? NodeContext.current
-        if n != nil && box.node == nil { box.node = n }
-        return n
+    /// Eagerly bind the Box to the current node's storage during the build pass.
+    public func _resolveStorage() {
+        guard box.storage == nil, let node = NodeContext.current else { return }
+        box.storage = node.persistentState
+        box.node = node
+    }
+
+    /// Resolve the storage and node from the Box or current context.
+    /// On first access during a build pass, captures both the storage and node.
+    private var resolvedStorage: PersistentStateStorage? {
+        if let storage = box.storage { return storage }
+        guard let node = NodeContext.current else { return nil }
+        box.storage = node.persistentState
+        box.node = node
+        return node.persistentState
     }
 
     public var wrappedValue: Value {
         get {
-            guard let node = resolvedNode else { return initialValue }
-            return node.persistentState[key] as? Value ?? initialValue
+            let lock = Application.shared?.stateLock
+            lock?.lock()
+            defer { lock?.unlock() }
+            guard let storage = resolvedStorage else { return initialValue }
+            return storage[key] as? Value ?? initialValue
         }
         nonmutating set {
-            guard let node = resolvedNode else { return }
-            let oldValue = node.persistentState[key]
-            node.persistentState[key] = newValue
+            let lock = Application.shared?.stateLock
+            lock?.lock()
+            guard let storage = resolvedStorage else {
+                lock?.unlock()
+                return
+            }
+            let oldValue = storage[key]
+            storage[key] = newValue
+            lock?.unlock()
 
             if !Self.isEqual(oldValue, newValue) {
-                node.needsRebuild = true
+                // needsRebuild on the node is best-effort — the node may have
+                // been replaced by reconciliation, but scheduleUpdate() is the
+                // authoritative trigger for the next rebuild pass.
+                box.node?.needsRebuild = true
                 Application.shared?.scheduleUpdate()
             }
         }
@@ -51,27 +89,43 @@ public struct State<Value: Equatable>: DynamicProperty {
 
     public var projectedValue: Binding<Value> {
         let box = self.box
-        if box.node == nil { box.node = NodeContext.current }
+        // Eagerly resolve during the build pass
+        if box.storage == nil, let node = NodeContext.current {
+            box.storage = node.persistentState
+            box.node = node
+        }
         let key = self.key
         let initialValue = self.initialValue
 
-        func resolveNode() -> Node? {
-            let node = box.node ?? NodeContext.current
-            if node != nil && box.node == nil { box.node = node }
-            return node
+        func resolveStorage() -> PersistentStateStorage? {
+            if let storage = box.storage { return storage }
+            guard let node = NodeContext.current else { return nil }
+            box.storage = node.persistentState
+            box.node = node
+            return node.persistentState
         }
 
         return Binding(
             get: {
-                guard let node = resolveNode() else { return initialValue }
-                return node.persistentState[key] as? Value ?? initialValue
+                let lock = Application.shared?.stateLock
+                lock?.lock()
+                defer { lock?.unlock() }
+                guard let storage = resolveStorage() else { return initialValue }
+                return storage[key] as? Value ?? initialValue
             },
             set: { newValue in
-                guard let node = resolveNode() else { return }
-                let oldValue = node.persistentState[key]
-                node.persistentState[key] = newValue
+                let lock = Application.shared?.stateLock
+                lock?.lock()
+                guard let storage = resolveStorage() else {
+                    lock?.unlock()
+                    return
+                }
+                let oldValue = storage[key]
+                storage[key] = newValue
+                lock?.unlock()
+
                 if !Self.isEqual(oldValue, newValue) {
-                    node.needsRebuild = true
+                    box.node?.needsRebuild = true
                     Application.shared?.scheduleUpdate()
                 }
             }
@@ -84,8 +138,19 @@ public struct State<Value: Equatable>: DynamicProperty {
     }
 }
 
-/// Marker protocol for dynamic properties
-public protocol DynamicProperty {}
+/// Marker protocol for dynamic properties.
+/// Types conforming to this protocol can be eagerly resolved during the build
+/// pass so that their internal storage references are captured while
+/// NodeContext.current is available.
+public protocol DynamicProperty {
+    /// Called during the build pass to eagerly bind internal storage references
+    /// to the current node context. The default implementation is a no-op.
+    func _resolveStorage()
+}
+
+extension DynamicProperty {
+    public func _resolveStorage() {}
+}
 
 /// Two-way binding to a value
 @propertyWrapper
