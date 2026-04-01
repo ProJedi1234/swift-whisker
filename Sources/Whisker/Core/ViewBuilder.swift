@@ -189,7 +189,7 @@ final class NodeViewBuilder {
         let taskIDKey = "_task_id"
         let taskStartedKey = "_task_started"
         let currentID = modifier._taskID
-        let previousID = existing?.persistentState[taskIDKey] as? String
+        let previousID = existing?.persistentState[taskIDKey] as? TaskIdentity
         let wasStarted = existing?.persistentState[taskStartedKey] as? Bool ?? false
 
         if previousID == currentID && wasStarted {
