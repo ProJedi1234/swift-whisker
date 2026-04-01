@@ -49,6 +49,6 @@ public extension View {
     ///             n += 1
     ///         }
     func task(id: some Hashable, _ action: @escaping @Sendable () async -> Void) -> some View {
-        TaskModifier(content: self, taskBody: action, taskID: "\(id)")
+        TaskModifier(content: self, taskBody: action, taskID: "\(type(of: id)):\(id)")
     }
 }
