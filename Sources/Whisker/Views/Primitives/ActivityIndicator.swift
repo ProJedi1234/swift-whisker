@@ -31,7 +31,7 @@ public struct ActivityIndicator: View {
     /// Create an activity indicator.
     /// - Parameter fps: Animation speed in frames per second (default: 10)
     public init(fps: Double = 10) {
-        self.fps = fps
+        self.fps = max(1, fps)
     }
 
     public var body: Never {
