@@ -106,6 +106,7 @@ final class NodeViewBuilder {
 
         node.render = { [weak node] frame, buffer in
             guard let node = node else { return }
+            guard frame.width > 0, frame.height > 0 else { return }
             let style = Style().resolved(with: node.environment)
             let frameIndex = indicator.currentFrameIndex()
             let char = ActivityIndicator.frames[frameIndex]
@@ -230,6 +231,7 @@ final class NodeViewBuilder {
             let existingChild = index < existingChildren.count ? existingChildren[index] : nil
             node.addChild(buildNode(from: childView, existing: existingChild))
         }
+        cancelDroppedChildren(existingChildren, keeping: children.count)
         applyLayout(node, engine: VStackLayout(alignment: alignment, spacing: spacing))
     }
 
@@ -240,6 +242,7 @@ final class NodeViewBuilder {
             let existingChild = index < existingChildren.count ? existingChildren[index] : nil
             node.addChild(buildNode(from: childView, existing: existingChild))
         }
+        cancelDroppedChildren(existingChildren, keeping: children.count)
         applyLayout(node, engine: HStackLayout(alignment: alignment, spacing: spacing))
     }
 
@@ -250,6 +253,7 @@ final class NodeViewBuilder {
             let existingChild = index < existingChildren.count ? existingChildren[index] : nil
             node.addChild(buildNode(from: childView, existing: existingChild))
         }
+        cancelDroppedChildren(existingChildren, keeping: children.count)
         applyLayout(node, engine: ZStackLayout(alignment: alignment))
     }
 
@@ -264,6 +268,7 @@ final class NodeViewBuilder {
             let existingChild = index < existingChildren.count ? existingChildren[index] : nil
             node.addChild(buildNode(from: childView, existing: existingChild))
         }
+        cancelDroppedChildren(existingChildren, keeping: children.count)
         applyLayout(node, engine: VStackLayout(alignment: .leading, spacing: 0))
     }
 
@@ -301,6 +306,7 @@ final class NodeViewBuilder {
             let existingChild = index < existingChildren.count ? existingChildren[index] : nil
             node.addChild(buildNode(from: childView, existing: existingChild))
         }
+        cancelDroppedChildren(existingChildren, keeping: children.count)
         applyLayout(node, engine: VStackLayout(alignment: .leading, spacing: 0))
     }
 
@@ -342,6 +348,12 @@ final class NodeViewBuilder {
     }
 
     // MARK: - Helpers
+
+    private func cancelDroppedChildren(_ existingChildren: [Node], keeping count: Int) {
+        for dropped in existingChildren.dropFirst(count) {
+            dropped.cancelTasksRecursively()
+        }
+    }
 
     func extractViews(from value: Any) -> [any View] {
         if let tupleView = value as? any _TupleViewProtocol {
