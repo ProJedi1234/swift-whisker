@@ -1,11 +1,26 @@
 import Foundation
 
+/// Reference-type wrapper for persistent state so that @State property wrappers
+/// can hold a strong reference to the storage that survives node reconciliation.
+/// When a new node is reconciled from an old node, both share the same storage
+/// object, so async .task closures that captured the old node's storage still
+/// write to the correct (shared) location.
+public final class PersistentStateStorage: @unchecked Sendable {
+    var values: [String: Any] = [:]
+
+    /// Read or write a keyed value in persistent node state.
+    subscript(key: String) -> Any? {
+        get { values[key] }
+        set { values[key] = newValue }
+    }
+}
+
 public final class Node {
     weak var parent: Node?
     var children: [Node] = []
     var viewType: Any.Type
     var stateStorage: [String: Any] = [:]
-    var persistentState: [String: Any] = [:]
+    var persistentState = PersistentStateStorage()
     var conditionalBranch: Bool?
     var environment: EnvironmentValues = EnvironmentValues()
     var frame: Rect = .zero
@@ -15,8 +30,28 @@ public final class Node {
     var render: ((Rect, inout RenderBuffer) -> Void)?
     var layout: ((ProposedSize, [Node]) -> (Size, [(Node, Rect)]))?
 
+    /// Active async task spawned by a .task modifier. Stored as Any to avoid
+    /// generic constraints on Node — cast to Task<Void, Never> for cancellation.
+    var activeTask: Any?
+
     init(viewType: Any.Type) {
         self.viewType = viewType
+    }
+
+    /// Cancel any active async task on this node
+    func cancelTask() {
+        if let task = activeTask as? Task<Void, Never> {
+            task.cancel()
+        }
+        activeTask = nil
+    }
+
+    /// Cancel all active async tasks in this subtree
+    func cancelTasksRecursively() {
+        cancelTask()
+        for child in children {
+            child.cancelTasksRecursively()
+        }
     }
 
     func addChild(_ child: Node) {

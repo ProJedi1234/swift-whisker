@@ -17,7 +17,14 @@ public final class Application {
     var focusedIndex: Int = 0
     var updateScheduled = false
     var isRunning = false
+    /// Number of animated views (e.g. `ActivityIndicator`) in the current tree.
+    /// When non-zero, the run loop keeps scheduling redraws.
+    var animationTickCount = 0
     let rootViewBuilder: () -> any View
+
+    /// Lock for synchronizing @State mutations from async contexts (e.g. .task closures)
+    /// against the single-threaded rebuild pass. Uncontended in the common synchronous case.
+    let stateLock = NSLock()
 
     private let viewBuilder = NodeViewBuilder()
     private let inlineRenderer = InlineRenderer()
@@ -54,8 +61,10 @@ public final class Application {
         updateScheduled = true
     }
 
+    /// Stop the application and cancel any in-flight `.task` work.
     public func quit() {
         isRunning = false
+        rootNode?.cancelTasksRecursively()
     }
 
     private func runLoop() {
@@ -68,6 +77,11 @@ public final class Application {
                 updateScheduled = false
                 rebuild()
                 render()
+            }
+
+            // Keep updating while animated views are present
+            if animationTickCount > 0 {
+                updateScheduled = true
             }
 
             // Small sleep to avoid busy-waiting
@@ -136,6 +150,7 @@ public final class Application {
     }
 
     private func rebuild() {
+        animationTickCount = 0
         let view = rootViewBuilder()
         let oldRoot = rootNode
         rootNode = viewBuilder.buildNode(from: view, existing: oldRoot)

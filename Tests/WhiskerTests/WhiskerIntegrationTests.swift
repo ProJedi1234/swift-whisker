@@ -96,7 +96,7 @@ final class WhiskerIntegrationTests: XCTestCase {
         binding.wrappedValue = 7
 
         XCTAssertEqual(binding.wrappedValue, 7)
-        XCTAssertTrue(node.persistentState.values.contains { ($0 as? Int) == 7 })
+        XCTAssertTrue(node.persistentState.values.values.contains { ($0 as? Int) == 7 })
     }
 
     func testFocusTraversalOrder() {
@@ -114,6 +114,58 @@ final class WhiskerIntegrationTests: XCTestCase {
         XCTAssertTrue(root.findFirstFocusable() === first)
         XCTAssertTrue(first.findNextFocusable() === second)
         XCTAssertTrue(second.findPreviousFocusable() === first)
+    }
+
+    func testTaskIdentityDistinguishesSameStringRepresentation() {
+        XCTAssertNotEqual(TaskIdentity(1), TaskIdentity("1"))
+        XCTAssertEqual(TaskIdentity(1), TaskIdentity(1))
+        XCTAssertEqual(TaskIdentity("1"), TaskIdentity("1"))
+    }
+
+    func testTaskModifierSpawnsAndCompletes() {
+        // Build a view tree that includes a .task modifier
+        let viewBuilder = NodeViewBuilder()
+
+        struct TaskTestView: View {
+            @State var value = 0
+            var body: some View {
+                Text("hello")
+                    .task {
+                        // This should run on a background thread
+                        value = 42
+                    }
+            }
+        }
+
+        let backend = TestBackend(size: Size(width: 40, height: 5))
+        let app = Application(mode: .inline, backend: backend) { EmptyView() }
+        defer {
+            Application.shared = nil
+            NodeContext.current = nil
+        }
+
+        let root = viewBuilder.buildNode(from: TaskTestView())
+
+        // The task should have been spawned during buildNode
+        // Find the TaskModifier node — it wraps the Text node
+        var taskNode: Node?
+        root.traverse { node in
+            if node.activeTask != nil && taskNode == nil {
+                taskNode = node
+            }
+        }
+        XCTAssertNotNil(taskNode, "Expected a node with an active task")
+
+        // Give the task time to complete (it has no sleep, should be near-instant)
+        let expectation = self.expectation(description: "Task completes")
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) {
+            expectation.fulfill()
+        }
+        waitForExpectations(timeout: 2)
+
+        // The @State mutation should have been written to persistentState
+        // Check if scheduleUpdate was called
+        XCTAssertTrue(app.updateScheduled, "Expected scheduleUpdate to be called by task's @State mutation")
     }
 
     func testTextFieldKeyHandlingUpdatesTextAndCursor() {

@@ -1,3 +1,4 @@
+import Foundation
 import Whisker
 
 // ============================================================================
@@ -25,6 +26,7 @@ struct FormView: View {
     @State var planIndex = 0
     @State var message = ""
     @State var messageColor: Color = .white
+    @State var phase: Int = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -63,30 +65,55 @@ struct FormView: View {
                 )
                 .foregroundColor(.brightCyan)
             }
-            HStack(spacing: 0) {
-                Text("  ")
-                Button("Submit") {
-                    if name.isEmpty {
-                        message = "  ✗ Name is required"
-                        messageColor = .red
-                    } else if email.isEmpty || !email.contains("@") {
-                        message = "  ✗ Valid email is required"
-                        messageColor = .red
-                    } else if password.count < 4 {
-                        message = "  ✗ Password must be at least 4 characters"
-                        messageColor = .red
-                    } else if password != confirmPassword {
-                        message = "  ✗ Passwords do not match"
-                        messageColor = .red
-                    } else {
-                        let planName = plans.indices.contains(planIndex)
-                            ? plans[planIndex] : plans[0]
-                        message = "  ✓ Welcome, \(name)! (\(planName))"
-                        messageColor = .green
-                        Application.shared?.quit()
+            if phase == 0 {
+                HStack(spacing: 0) {
+                    Text("  ")
+                    Button("Submit") {
+                        if name.isEmpty {
+                            message = "  ✗ Name is required"
+                            messageColor = .red
+                        } else if email.isEmpty || !email.contains("@") {
+                            message = "  ✗ Valid email is required"
+                            messageColor = .red
+                        } else if password.count < 4 {
+                            message = "  ✗ Password must be at least 4 characters"
+                            messageColor = .red
+                        } else if password != confirmPassword {
+                            message = "  ✗ Passwords do not match"
+                            messageColor = .red
+                        } else {
+                            phase = 1
+                        }
                     }
+                    Text(message).foregroundColor(messageColor)
                 }
-                Text(message).foregroundColor(messageColor)
+            } else if phase == 1 {
+                HStack(spacing: 0) {
+                    Text("  ")
+                    ActivityIndicator().foregroundColor(.cyan)
+                    Text(" Signing up...").foregroundColor(.cyan)
+                }
+                .task {
+                    try? await Task.sleep(for: .seconds(2))
+                    phase = 2
+                }
+            } else if phase == 2 {
+                HStack(spacing: 0) {
+                    Text("  ✓ Signed up!").foregroundColor(.green)
+                }
+                .task {
+                    try? await Task.sleep(for: .seconds(1))
+                    phase = 3
+                }
+            } else {
+                HStack(spacing: 0) {
+                    Text("  ✓ Welcome, \(name)! (\(plans.indices.contains(planIndex) ? plans[planIndex] : plans[0]))")
+                        .foregroundColor(.green)
+                }
+                .task {
+                    try? await Task.sleep(for: .seconds(1))
+                    Application.shared?.quit()
+                }
             }
         }
     }
