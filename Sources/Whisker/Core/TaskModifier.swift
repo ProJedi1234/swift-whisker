@@ -6,9 +6,12 @@ import Foundation
 /// Pairs the runtime type (via `ObjectIdentifier`) with the erased value (`AnyHashable`)
 /// so that e.g. `Int(1)` and `String("1")` are never considered equal.
 struct TaskIdentity: Equatable {
+    /// Runtime type of the identity value, used to distinguish e.g. `Int(1)` from `String("1")`.
     let typeID: ObjectIdentifier
+    /// Erased hashable identity value compared alongside `typeID`.
     let value: AnyHashable
 
+    /// Create a task identity from a hashable value and its runtime type.
     init<H: Hashable>(_ id: H) {
         self.typeID = ObjectIdentifier(type(of: id))
         self.value = AnyHashable(id)

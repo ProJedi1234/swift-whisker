@@ -8,6 +8,7 @@ import Foundation
 public final class PersistentStateStorage: @unchecked Sendable {
     var values: [String: Any] = [:]
 
+    /// Read or write a keyed value in persistent node state.
     subscript(key: String) -> Any? {
         get { values[key] }
         set { values[key] = newValue }

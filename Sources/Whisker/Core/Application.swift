@@ -17,6 +17,8 @@ public final class Application {
     var focusedIndex: Int = 0
     var updateScheduled = false
     var isRunning = false
+    /// Number of animated views (e.g. `ActivityIndicator`) in the current tree.
+    /// When non-zero, the run loop keeps scheduling redraws.
     var animationTickCount = 0
     let rootViewBuilder: () -> any View
 
@@ -59,6 +61,7 @@ public final class Application {
         updateScheduled = true
     }
 
+    /// Stop the application and cancel any in-flight `.task` work.
     public func quit() {
         isRunning = false
         rootNode?.cancelTasksRecursively()

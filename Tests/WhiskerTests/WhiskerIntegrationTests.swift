@@ -116,6 +116,12 @@ final class WhiskerIntegrationTests: XCTestCase {
         XCTAssertTrue(second.findPreviousFocusable() === first)
     }
 
+    func testTaskIdentityDistinguishesSameStringRepresentation() {
+        XCTAssertNotEqual(TaskIdentity(1), TaskIdentity("1"))
+        XCTAssertEqual(TaskIdentity(1), TaskIdentity(1))
+        XCTAssertEqual(TaskIdentity("1"), TaskIdentity("1"))
+    }
+
     func testTaskModifierSpawnsAndCompletes() {
         // Build a view tree that includes a .task modifier
         let viewBuilder = NodeViewBuilder()

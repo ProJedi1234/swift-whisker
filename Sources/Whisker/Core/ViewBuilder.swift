@@ -101,6 +101,7 @@ final class NodeViewBuilder {
         }
     }
 
+    /// Build a 1×1 animated spinner node and register it with the application run loop.
     private func buildActivityIndicatorNode(_ node: Node, indicator: ActivityIndicator) {
         Application.shared?.animationTickCount += 1
 
@@ -168,6 +169,7 @@ final class NodeViewBuilder {
         }
     }
 
+    /// Build a passthrough node that spawns or preserves an async `.task` for its content.
     private func buildTaskModifierNode(_ node: Node, modifier: any _TaskModifierProtocol, existing: Node?) {
         // Build child content (pass through, same as EnvironmentModifier)
         let existingChild = existing?.children.first
@@ -349,6 +351,7 @@ final class NodeViewBuilder {
 
     // MARK: - Helpers
 
+    /// Cancel async work in reconciled-out container children that are no longer in the tree.
     private func cancelDroppedChildren(_ existingChildren: [Node], keeping count: Int) {
         for dropped in existingChildren.dropFirst(count) {
             dropped.cancelTasksRecursively()

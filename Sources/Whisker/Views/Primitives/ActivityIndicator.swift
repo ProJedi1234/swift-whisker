@@ -13,6 +13,7 @@ import Foundation
 public struct ActivityIndicator: View {
     public typealias Body = Never
 
+    /// Braille spinner frames cycled by `currentFrameIndex()`.
     static let frames: [Character] = [
         "\u{280B}", // ⠋
         "\u{2819}", // ⠙
