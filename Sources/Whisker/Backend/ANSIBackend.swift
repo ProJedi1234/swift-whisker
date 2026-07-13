@@ -74,8 +74,14 @@ public final class ANSIBackend: TerminalBackend, @unchecked Sendable {
             raw.c_iflag &= ~tcflag(IXON | ICRNL | BRKINT | INPCK | ISTRIP)
             raw.c_oflag &= ~tcflag(OPOST)
             raw.c_cflag |= tcflag(CS8)
-            raw.c_cc.16 = 0  // VMIN
-            raw.c_cc.17 = 1  // VTIME (1/10 second timeout)
+            // Index c_cc by the platform's named constants: VMIN/VTIME live at
+            // different offsets on Darwin vs. Linux.
+            withUnsafeMutablePointer(to: &raw.c_cc) { ccPtr in
+                ccPtr.withMemoryRebound(to: cc_t.self, capacity: Int(NCCS)) { cc in
+                    cc[Int(VMIN)] = 0   // no minimum bytes for a read
+                    cc[Int(VTIME)] = 1  // 1/10 second read timeout
+                }
+            }
 
             guard tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == 0 else {
                 throw TerminalSystemError(operation: "enable raw terminal mode", code: errno)

@@ -11,7 +11,6 @@ int whisker_test_spawn_pty(
     int *slave_fd
 );
 
-int whisker_test_wait_for_stop(pid_t pid, int expected_signal);
 int whisker_test_wait_for_signal_exit(pid_t pid, int expected_signal);
 
 #endif

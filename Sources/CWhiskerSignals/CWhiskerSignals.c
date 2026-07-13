@@ -8,12 +8,13 @@
 #include <unistd.h>
 
 static const int handled_signals[] = {SIGINT, SIGTERM, SIGHUP, SIGTSTP};
-static const size_t handled_signal_count = sizeof(handled_signals) / sizeof(handled_signals[0]);
+#define HANDLED_SIGNAL_COUNT (sizeof(handled_signals) / sizeof(handled_signals[0]))
+static const size_t handled_signal_count = HANDLED_SIGNAL_COUNT;
 
 static int pipe_fds[2] = {-1, -1};
-static struct sigaction previous_actions[4];
+static struct sigaction previous_actions[HANDLED_SIGNAL_COUNT];
 static sigset_t previous_signal_mask;
-static volatile sig_atomic_t pending_signals[4];
+static volatile sig_atomic_t pending_signals[HANDLED_SIGNAL_COUNT];
 static int installed = 0;
 
 static int signal_index(int signal_number) {
@@ -90,7 +91,7 @@ int whisker_signals_install(int *read_fd) {
     for (size_t index = 0; index < handled_signal_count; index++) {
         sigaddset(&handled_set, handled_signals[index]);
     }
-    if (sigprocmask(SIG_UNBLOCK, &handled_set, &previous_signal_mask) == -1) {
+    if (sigprocmask(SIG_BLOCK, &handled_set, &previous_signal_mask) == -1) {
         result = errno;
         close(pipe_fds[0]);
         close(pipe_fds[1]);
@@ -114,6 +115,12 @@ int whisker_signals_install(int *read_fd) {
             break;
         }
         installed_count++;
+    }
+
+    // Handlers are now in place; restore the prior mask so the handled signals
+    // return to their previous (deliverable) state with our handlers installed.
+    if (result == 0 && sigprocmask(SIG_SETMASK, &previous_signal_mask, NULL) == -1) {
+        result = errno;
     }
 
     if (result != 0) {

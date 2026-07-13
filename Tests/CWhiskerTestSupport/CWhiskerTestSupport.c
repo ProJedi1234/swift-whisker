@@ -60,21 +60,6 @@ int whisker_test_spawn_pty(
     return 0;
 }
 
-int whisker_test_wait_for_stop(pid_t pid, int expected_signal) {
-    int status = 0;
-    for (int attempt = 0; attempt < 500; attempt++) {
-        pid_t result = waitpid(pid, &status, WUNTRACED | WNOHANG);
-        if (result == pid) {
-            return WIFSTOPPED(status) && WSTOPSIG(status) == expected_signal ? 0 : ECHILD;
-        }
-        if (result == -1) {
-            return errno;
-        }
-        usleep(10000);
-    }
-    return ETIMEDOUT;
-}
-
 int whisker_test_wait_for_signal_exit(pid_t pid, int expected_signal) {
     int status = 0;
     for (int attempt = 0; attempt < 500; attempt++) {
