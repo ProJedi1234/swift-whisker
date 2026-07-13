@@ -12,8 +12,37 @@ public struct RenderBuffer {
     }
 
     public mutating func draw(_ string: String, at position: Position, style: Style = .default) {
-        for (i, char) in string.enumerated() {
-            draw(char, at: Position(x: position.x + i, y: position.y), style: style)
+        var column = position.x
+        for char in string {
+            let width = terminalCellWidth(char)
+            guard width > 0 else { continue }
+            draw(char, at: Position(x: column, y: position.y), style: style)
+            column += width
+        }
+    }
+
+    mutating func drawClipped(
+        _ string: String,
+        at position: Position,
+        maxWidth: Int,
+        style: Style = .default,
+        replacingControlCharacters: Bool = false
+    ) {
+        guard maxWidth > 0 else { return }
+        var columnOffset = 0
+        for character in string {
+            let rendered = replacingControlCharacters
+                ? terminalSafeCharacter(character)
+                : character
+            let width = terminalCellWidth(rendered)
+            guard width > 0 else { continue }
+            guard columnOffset + width <= maxWidth else { break }
+            draw(
+                rendered,
+                at: Position(x: position.x + columnOffset, y: position.y),
+                style: style
+            )
+            columnOffset += width
         }
     }
 

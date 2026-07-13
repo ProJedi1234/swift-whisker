@@ -59,7 +59,7 @@ final class InlineRenderer {
             }
 
             line += String(cmd.cell.char)
-            col += 1
+            col += terminalCellWidth(cmd.cell.char)
         }
 
         line += ANSI.reset
@@ -70,7 +70,7 @@ final class InlineRenderer {
     private func positionCursor(focusedNode: Node?, contentHeight: Int, backend: TerminalBackend) {
         if let focused = focusedNode,
            focused[.getText] != nil {
-            let cursorX = focused.frame.x + (focused[.cursorPosition] ?? 0)
+            let cursorX = focused.frame.x + textInputCursorColumn(for: focused)
             let cursorY = focused.frame.y
             let rowsUp = (contentHeight - 1) - cursorY
             if rowsUp > 0 {

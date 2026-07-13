@@ -22,7 +22,13 @@ int whisker_test_spawn_pty(
     int *master_fd,
     int *slave_fd
 ) {
-    if (openpty(master_fd, slave_fd, NULL, NULL, NULL) == -1) {
+    struct winsize size = {
+        .ws_row = 24,
+        .ws_col = 80,
+        .ws_xpixel = 0,
+        .ws_ypixel = 0,
+    };
+    if (openpty(master_fd, slave_fd, NULL, NULL, &size) == -1) {
         return errno;
     }
 

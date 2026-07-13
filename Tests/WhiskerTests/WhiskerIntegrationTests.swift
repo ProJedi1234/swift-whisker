@@ -198,4 +198,42 @@ final class WhiskerIntegrationTests: XCTestCase {
         node[.keyHandler]?(KeyEvent(key: .backspace))
         XCTAssertEqual(text, "C")
     }
+
+    func testTextFieldInsertsTextAndPasteAtomicallyAtCursor() {
+        var text = "start-end"
+        let node = Node(viewType: TextField.self)
+        let viewBuilder = NodeViewBuilder()
+        viewBuilder.buildInputFieldNode(
+            node,
+            getText: { text },
+            setText: { text = $0 },
+            placeholder: "",
+            isSecure: false
+        )
+        node[.cursorPosition] = 6
+
+        node[.textInputHandler]?("long🙂\n\u{1b}[A")
+
+        XCTAssertEqual(text, "start-long🙂\n\u{1b}[Aend")
+        XCTAssertEqual(node[.cursorPosition], "start-long🙂\n\u{1b}[A".count)
+    }
+
+    func testTextFieldRendersPastedControlCharactersSafely() {
+        var text = "a\u{1b}\nb"
+        let node = Node(viewType: TextField.self)
+        let viewBuilder = NodeViewBuilder()
+        viewBuilder.buildInputFieldNode(
+            node,
+            getText: { text },
+            setText: { text = $0 },
+            placeholder: "",
+            isSecure: false
+        )
+        node.frame = Rect(x: 0, y: 0, width: 4, height: 1)
+        var buffer = RenderBuffer()
+
+        node.render?(node.frame, &buffer)
+
+        XCTAssertEqual(buffer.commands.map(\.cell.char), ["a", " ", " ", "b"])
+    }
 }

@@ -40,6 +40,8 @@ final class TerminalLifecycleTests: XCTestCase {
         defer { forceCleanup(fixture) }
 
         let output = try readUntil("double-teardown-complete", from: fixture.controller)
+        XCTAssertEqual(output.components(separatedBy: "\u{1b}[?2004h").count - 1, 1)
+        XCTAssertEqual(output.components(separatedBy: "\u{1b}[?2004l").count - 1, 1)
         XCTAssertEqual(output.components(separatedBy: "\u{1b}[?25h").count - 1, 1)
         XCTAssertEqual(output.components(separatedBy: "\u{1b}[?1049l").count - 1, 1)
         try assertCookedMode(fixture.controller)
@@ -69,6 +71,7 @@ final class TerminalLifecycleTests: XCTestCase {
         output += try readUntil("\u{1b}[?1049l", from: fixture.controller)
 
         XCTAssertTrue(output.contains("\u{1b}[?25h"))
+        XCTAssertTrue(output.contains("\u{1b}[?2004l"))
         XCTAssertTrue(output.contains("\u{1b}[0m"))
         try assertCookedMode(fixture.controller)
     }
@@ -99,13 +102,32 @@ final class TerminalLifecycleTests: XCTestCase {
         try assertCookedMode(fixture.controller)
 
         XCTAssertEqual(kill(fixture.pid, SIGCONT), 0)
-        let resumedOutput = try readUntil("\u{1b}[?1049h", from: fixture.controller)
+        let resumedOutput = try readUntil("\u{1b}[?2004h", from: fixture.controller)
+        XCTAssertTrue(resumedOutput.contains("\u{1b}[?1049h"))
+        XCTAssertTrue(resumedOutput.contains("\u{1b}[?2004h"))
         XCTAssertTrue(resumedOutput.contains("\u{1b}[?25l"))
         try assertRawModeWithSignals(fixture.controller)
 
         XCTAssertEqual(kill(fixture.pid, SIGTERM), 0)
         _ = try readUntil("\u{1b}[?1049l", from: fixture.controller)
         try assertCookedMode(fixture.controller)
+    }
+
+    func testSuccessiveKeystrokesRemainReadableAfterInputPause() throws {
+        let fixture = try spawn(mode: "input")
+        defer { forceCleanup(fixture) }
+
+        _ = try readUntil("\u{1b}[?25h", from: fixture.controller)
+        try writeInput("a", to: fixture.controller)
+        _ = try readUntil("a", from: fixture.controller)
+
+        // Exceed the terminal's VTIME interval. The following key must still be read;
+        // a zero-byte raw-mode read during this pause is not EOF.
+        usleep(200_000)
+        try writeInput("b", to: fixture.controller)
+        let output = try readUntil("ab", from: fixture.controller)
+
+        XCTAssertTrue(output.contains("ab"))
     }
 
     private func spawn(mode: String) throws -> Fixture {
@@ -154,6 +176,16 @@ final class TerminalLifecycleTests: XCTestCase {
             }
         }
         return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    private func writeInput(_ input: String, to descriptor: Int32) throws {
+        let bytes = Array(input.utf8)
+        let written = bytes.withUnsafeBytes { rawBuffer in
+            write(descriptor, rawBuffer.baseAddress, rawBuffer.count)
+        }
+        guard written == bytes.count else {
+            throw TerminalSystemError(operation: "write PTY input", code: errno)
+        }
     }
 
     private func assertCookedMode(_ descriptor: Int32, file: StaticString = #filePath, line: UInt = #line) throws {
