@@ -12,6 +12,8 @@ private func tcflag(_ v: Int32) -> UInt { UInt(bitPattern: Int(v)) }
 public final class ANSIBackend: TerminalBackend, @unchecked Sendable {
     private var originalTermios: termios?
     private var outputBuffer = Data()
+    private var rawModeEnabled = false
+    private var presentationEnabled = false
 
     public var renderMode: RenderMode = .fullscreen
 
@@ -55,19 +57,32 @@ public final class ANSIBackend: TerminalBackend, @unchecked Sendable {
     }
 
     public func setup() throws {
-        var raw = termios()
-        if tcgetattr(STDIN_FILENO, &raw) == 0 {
-            originalTermios = raw
+        guard !presentationEnabled else { return }
 
-            raw.c_lflag &= ~tcflag(ECHO | ICANON | ISIG | IEXTEN)
+        if !rawModeEnabled {
+            var raw = termios()
+            guard tcgetattr(STDIN_FILENO, &raw) == 0 else {
+                throw TerminalSystemError(operation: "tcgetattr", code: errno)
+            }
+
+            if originalTermios == nil {
+                originalTermios = raw
+            }
+
+            // Keep ISIG enabled so Ctrl-C and Ctrl-Z remain SIGINT and SIGTSTP.
+            raw.c_lflag &= ~tcflag(ECHO | ICANON | IEXTEN)
             raw.c_iflag &= ~tcflag(IXON | ICRNL | BRKINT | INPCK | ISTRIP)
             raw.c_oflag &= ~tcflag(OPOST)
             raw.c_cflag |= tcflag(CS8)
             raw.c_cc.16 = 0  // VMIN
             raw.c_cc.17 = 1  // VTIME (1/10 second timeout)
 
-            tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw)
+            guard tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == 0 else {
+                throw TerminalSystemError(operation: "enable raw terminal mode", code: errno)
+            }
+            rawModeEnabled = true
         }
+        presentationEnabled = true
 
         switch renderMode {
         case .fullscreen:
@@ -80,21 +95,34 @@ public final class ANSIBackend: TerminalBackend, @unchecked Sendable {
         flush()
     }
 
-    public func teardown() {
-        appendToBuffer(ANSI.cursorShow)
+    public func teardown() throws {
+        var firstError: Error?
 
-        switch renderMode {
-        case .fullscreen:
-            appendToBuffer(ANSI.alternateScreenOff)
-        case .inline:
-            appendToBuffer("\r\n")
+        if presentationEnabled {
+            appendToBuffer(ANSI.cursorShow)
+
+            switch renderMode {
+            case .fullscreen:
+                appendToBuffer(ANSI.alternateScreenOff)
+            case .inline:
+                appendToBuffer("\r\n")
+            }
+
+            appendToBuffer(ANSI.reset)
+            flush()
+            presentationEnabled = false
         }
 
-        appendToBuffer(ANSI.reset)
-        flush()
+        if rawModeEnabled, var original = originalTermios {
+            if tcsetattr(STDIN_FILENO, TCSAFLUSH, &original) == 0 {
+                rawModeEnabled = false
+            } else {
+                firstError = TerminalSystemError(operation: "restore terminal mode", code: errno)
+            }
+        }
 
-        if var original = originalTermios {
-            tcsetattr(STDIN_FILENO, TCSAFLUSH, &original)
+        if let firstError {
+            throw firstError
         }
     }
 

@@ -88,7 +88,7 @@ public protocol TerminalBackend: AnyObject, Sendable {
     func writeRaw(_ string: String)
     func flush()
     func setup() throws
-    func teardown()
+    func teardown() throws
     func moveCursor(to position: Position)
     func setCursorVisible(_ visible: Bool)
     func clearScreen()

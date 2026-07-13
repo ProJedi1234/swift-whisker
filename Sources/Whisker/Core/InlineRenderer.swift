@@ -3,6 +3,12 @@ final class InlineRenderer {
     private(set) var lastCursorContentRow: Int = 0
     private var isFirstRender: Bool = true
 
+    func reset() {
+        lastRenderedLineCount = 0
+        lastCursorContentRow = 0
+        isFirstRender = true
+    }
+
     func render(_ buffer: RenderBuffer, backend: TerminalBackend, focusedNode: Node?) {
         let contentHeight: Int
         if buffer.commands.isEmpty {

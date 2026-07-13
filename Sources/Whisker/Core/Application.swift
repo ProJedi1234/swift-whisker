@@ -1,4 +1,9 @@
 import Foundation
+#if os(Linux)
+import Glibc
+#else
+import Darwin
+#endif
 
 /// How the application renders to the terminal
 public enum RenderMode {
@@ -27,7 +32,7 @@ public final class Application {
     let stateLock = NSLock()
 
     private let viewBuilder = NodeViewBuilder()
-    private let inlineRenderer = InlineRenderer()
+    let inlineRenderer = InlineRenderer()
 
     public init<V: View>(mode: RenderMode = .fullscreen, backend: TerminalBackend = ANSIBackend(), @ViewBuilder rootView: @escaping () -> V) {
         self.backend = backend
@@ -37,23 +42,42 @@ public final class Application {
     }
 
     public func run() throws {
-        try backend.setup()
-        defer {
-            if backend.renderMode == .inline && inlineRenderer.lastRenderedLineCount > 0 {
-                let rowsDown = (inlineRenderer.lastRenderedLineCount - 1) - inlineRenderer.lastCursorContentRow
-                if rowsDown > 0 {
-                    backend.writeRaw("\u{1b}[\(rowsDown)B")
-                }
-                backend.flush()
-            }
-            backend.teardown()
+        let signalCoordinator: SignalCoordinator
+        do {
+            signalCoordinator = try SignalCoordinator()
+        } catch {
             Application.shared = nil
+            throw error
+        }
+        var pendingError: Error?
+
+        do {
+            try backend.setup()
+            isRunning = true
+            rebuild()
+            render()
+            try runLoop(signalCoordinator: signalCoordinator)
+        } catch {
+            pendingError = error
         }
 
-        isRunning = true
-        rebuild()
-        render()
-        runLoop()
+        isRunning = false
+        rootNode?.cancelTasksRecursively()
+
+        do {
+            try cleanupTerminal()
+        } catch {
+            if pendingError == nil { pendingError = error }
+        }
+
+        do {
+            try signalCoordinator.uninstall()
+        } catch {
+            if pendingError == nil { pendingError = error }
+        }
+
+        Application.shared = nil
+        if let pendingError { throw pendingError }
     }
 
     public func scheduleUpdate() {
@@ -67,9 +91,19 @@ public final class Application {
         rootNode?.cancelTasksRecursively()
     }
 
-    private func runLoop() {
+    private func runLoop(signalCoordinator: SignalCoordinator) throws {
         while isRunning {
-            if let event = readInput() {
+            for signalNumber in try signalCoordinator.drain() {
+                try handleSignal(signalNumber, coordinator: signalCoordinator)
+            }
+            guard isRunning else { break }
+
+            // Park until a keystroke arrives or a signal fires, instead of spinning at a
+            // fixed 60fps. Both the terminal and the signal self-pipe wake poll() the
+            // instant they have data, so this is where the loop spends its idle time.
+            let stdinReady = try waitForActivity(signalReadFD: signalCoordinator.readFileDescriptor)
+
+            if stdinReady, let event = try readInput() {
                 handleEvent(event)
             }
 
@@ -83,20 +117,65 @@ public final class Application {
             if animationTickCount > 0 {
                 updateScheduled = true
             }
-
-            // Small sleep to avoid busy-waiting
-            Thread.sleep(forTimeInterval: 0.016) // ~60fps
         }
     }
 
-    private func readInput() -> TerminalEvent? {
+    /// Blocks until stdin or the signal self-pipe becomes readable, or the timeout elapses.
+    /// Returns `true` when stdin has bytes waiting.
+    ///
+    /// Input and signals wake `poll()` immediately regardless of the timeout — the timeout
+    /// only bounds how long we sleep waiting for work that carries *no* file-descriptor
+    /// event: animation frames, and `@State` updates scheduled from async `.task` closures
+    /// on another thread (those flip `updateScheduled` without touching any fd).
+    private func waitForActivity(signalReadFD: Int32) throws -> Bool {
+        var fds = [
+            pollfd(fd: STDIN_FILENO, events: Int16(POLLIN), revents: 0),
+            pollfd(fd: signalReadFD, events: Int16(POLLIN), revents: 0),
+        ]
+
+        // The timeout only bounds work with no fd to wake poll(): a redraw already queued
+        // (service it now), animation frames (60fps cadence), or an idle screen (sleep,
+        // but cap it so cross-thread @State updates surface promptly).
+        let timeoutMilliseconds: Int32
+        if updateScheduled {
+            timeoutMilliseconds = 0
+        } else if animationTickCount > 0 {
+            timeoutMilliseconds = 16
+        } else {
+            timeoutMilliseconds = 50
+        }
+
+        let ready = poll(&fds, nfds_t(fds.count), timeoutMilliseconds)
+        if ready == -1 {
+            if errno == EINTR { return false }
+            throw TerminalSystemError(operation: "poll terminal input", code: errno)
+        }
+        return (fds[0].revents & Int16(POLLIN)) != 0
+    }
+
+    private func readInput() throws -> TerminalEvent? {
         var buffer = [UInt8](repeating: 0, count: 16)
 
         let flags = fcntl(STDIN_FILENO, F_GETFL)
-        _ = fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK)
-        defer { _ = fcntl(STDIN_FILENO, F_SETFL, flags) }
+        guard flags != -1 else {
+            throw TerminalSystemError(operation: "fcntl(F_GETFL)", code: errno)
+        }
+        guard fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK) != -1 else {
+            throw TerminalSystemError(operation: "fcntl(F_SETFL, O_NONBLOCK)", code: errno)
+        }
 
         let bytesRead = read(STDIN_FILENO, &buffer, buffer.count)
+        let readError = errno
+        guard fcntl(STDIN_FILENO, F_SETFL, flags) != -1 else {
+            throw TerminalSystemError(operation: "fcntl(F_SETFL, restore)", code: errno)
+        }
+
+        if bytesRead == -1 {
+            if readError == EAGAIN || readError == EWOULDBLOCK || readError == EINTR {
+                return nil
+            }
+            throw TerminalSystemError(operation: "read terminal input", code: readError)
+        }
         guard bytesRead > 0 else { return nil }
 
         return parseInput(Array(buffer.prefix(bytesRead)))
@@ -104,10 +183,6 @@ public final class Application {
 
     private func parseInput(_ bytes: [UInt8]) -> TerminalEvent? {
         guard !bytes.isEmpty else { return nil }
-        if bytes.count == 1, bytes[0] == 3 {
-            isRunning = false
-            return nil
-        }
         return InputParser.parse(bytes)
     }
 
@@ -149,7 +224,7 @@ public final class Application {
         }
     }
 
-    private func rebuild() {
+    func rebuild() {
         animationTickCount = 0
         let view = rootViewBuilder()
         let oldRoot = rootNode
@@ -194,7 +269,7 @@ public final class Application {
         }
     }
 
-    private func render() {
+    func render() {
         guard let root = rootNode else { return }
 
         var buffer = RenderBuffer()
