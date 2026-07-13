@@ -131,6 +131,35 @@ final class InputParserTests: XCTestCase {
         XCTAssertEqual(values(events), [.paste(payload)])
     }
 
+    func testBracketedPasteExceedingMaxSizeIsTruncated() {
+        let limit = 16
+        let payload = String(repeating: "A", count: 40)
+        let input = Array("\u{1b}[200~\(payload)\u{1b}[201~after".utf8)
+        var parser = InputParser(maxPasteByteCount: limit)
+        let now = clock.now
+        let events = input.flatMap { parser.feed([$0], at: now) }
+
+        XCTAssertEqual(normalized(values(events)), [
+            .paste(String(repeating: "A", count: limit)),
+            .text("after")
+        ])
+    }
+
+    func testBracketedPasteOverflowStillFindsEndAcrossChunks() {
+        let limit = 8
+        var parser = InputParser(maxPasteByteCount: limit)
+        let now = clock.now
+
+        var events = parser.feed(Array("\u{1b}[200~\(String(repeating: "B", count: 20))".utf8), at: now)
+        XCTAssertTrue(events.isEmpty)
+
+        events = parser.feed(Array("\u{1b}[201~ok".utf8), at: now)
+        XCTAssertEqual(values(events), [
+            .paste(String(repeating: "B", count: limit)),
+            .text("ok")
+        ])
+    }
+
     func testLargeOrdinaryTextExceedsReadBuffer() {
         let payload = String(repeating: "A long Unicode story 🙂 ", count: 2_000)
         let input = Array(payload.utf8)

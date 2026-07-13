@@ -1,6 +1,8 @@
 struct InputParser {
     private static let bracketedPasteStart = Array("\u{1b}[200~".utf8)
     private static let bracketedPasteEnd = Array("\u{1b}[201~".utf8)
+    /// Default ceiling for a single bracketed-paste payload (1 MiB).
+    static let defaultMaxPasteByteCount = 1_048_576
     private static let tildeKeys: [Int: Key] = [
         1: .home,
         3: .delete,
@@ -24,13 +26,21 @@ struct InputParser {
     ]
 
     let escapeTimeout: Duration
+    /// Hard limit on buffered paste bytes; overflow is truncated and discarded until the end marker.
+    let maxPasteByteCount: Int
 
     private var buffer: [UInt8] = []
     private var pasteBuffer: [UInt8]?
+    /// True after `pasteBuffer` hits `maxPasteByteCount`; remaining paste bytes are dropped.
+    private var discardingPaste = false
     private(set) var nextDeadline: ContinuousClock.Instant?
 
-    init(escapeTimeout: Duration = .milliseconds(50)) {
+    init(
+        escapeTimeout: Duration = .milliseconds(50),
+        maxPasteByteCount: Int = InputParser.defaultMaxPasteByteCount
+    ) {
         self.escapeTimeout = max(.zero, escapeTimeout)
+        self.maxPasteByteCount = max(0, maxPasteByteCount)
     }
 
     mutating func feed(
@@ -57,11 +67,21 @@ struct InputParser {
         var events = parseAvailable(at: ContinuousClock().now)
 
         if var pasteBuffer {
-            pasteBuffer.append(contentsOf: buffer)
+            if !discardingPaste {
+                appendPasteBytes(Array(buffer), to: &pasteBuffer)
+            }
             buffer.removeAll(keepingCapacity: true)
             self.pasteBuffer = nil
+            discardingPaste = false
             nextDeadline = nil
             events.append(.paste(String(decoding: pasteBuffer, as: UTF8.self)))
+            return events
+        }
+
+        if discardingPaste {
+            buffer.removeAll(keepingCapacity: true)
+            discardingPaste = false
+            nextDeadline = nil
             return events
         }
 
@@ -94,7 +114,7 @@ struct InputParser {
         }
 
         while !buffer.isEmpty {
-            if pasteBuffer != nil {
+            if pasteBuffer != nil || discardingPaste {
                 flushText()
                 guard consumePasteIfComplete(into: &events) else { break }
                 continue
@@ -175,7 +195,7 @@ struct InputParser {
             buffer.removeFirst(finalIndex + 1)
 
             if sequence == Self.bracketedPasteStart {
-                pasteBuffer = []
+                beginPasteMode()
             } else if let event = event(forCSI: sequence) {
                 events.append(event)
             }
@@ -215,14 +235,26 @@ struct InputParser {
         return nil
     }
 
-    private mutating func consumePasteIfComplete(into events: inout [TerminalEvent]) -> Bool {
-        guard var pasteBuffer else { return true }
+    private mutating func beginPasteMode() {
+        var initial: [UInt8] = []
+        if maxPasteByteCount > 0 {
+            initial.reserveCapacity(min(4_096, maxPasteByteCount))
+        }
+        pasteBuffer = initial
+        discardingPaste = false
+    }
 
+    private mutating func consumePasteIfComplete(into events: inout [TerminalEvent]) -> Bool {
         if let markerIndex = buffer.firstRange(of: Self.bracketedPasteEnd)?.lowerBound {
-            pasteBuffer.append(contentsOf: buffer[..<markerIndex])
+            if var pasteBuffer {
+                if !discardingPaste {
+                    appendPasteBytes(Array(buffer[..<markerIndex]), to: &pasteBuffer)
+                }
+                events.append(.paste(String(decoding: pasteBuffer, as: UTF8.self)))
+            }
             buffer.removeFirst(markerIndex + Self.bracketedPasteEnd.count)
             self.pasteBuffer = nil
-            events.append(.paste(String(decoding: pasteBuffer, as: UTF8.self)))
+            discardingPaste = false
             return true
         }
 
@@ -231,10 +263,31 @@ struct InputParser {
             marker: Self.bracketedPasteEnd
         )
         let consumedCount = buffer.count - retainedCount
-        pasteBuffer.append(contentsOf: buffer.prefix(consumedCount))
+        if var pasteBuffer, !discardingPaste, consumedCount > 0 {
+            appendPasteBytes(Array(buffer.prefix(consumedCount)), to: &pasteBuffer)
+            self.pasteBuffer = pasteBuffer
+        }
         buffer.removeFirst(consumedCount)
-        self.pasteBuffer = pasteBuffer
         return false
+    }
+
+    /// Appends paste bytes up to `maxPasteByteCount`, then switches to discard mode.
+    private mutating func appendPasteBytes(_ bytes: [UInt8], to pasteBuffer: inout [UInt8]) {
+        guard !bytes.isEmpty else { return }
+        let room = maxPasteByteCount - pasteBuffer.count
+        if room <= 0 {
+            discardingPaste = true
+            return
+        }
+        if bytes.count <= room {
+            pasteBuffer.append(contentsOf: bytes)
+            if pasteBuffer.count >= maxPasteByteCount {
+                discardingPaste = true
+            }
+            return
+        }
+        pasteBuffer.append(contentsOf: bytes.prefix(room))
+        discardingPaste = true
     }
 
     private func event(forCSI sequence: [UInt8]) -> TerminalEvent? {

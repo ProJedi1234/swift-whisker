@@ -207,6 +207,10 @@ public final class Application {
         return stdinReadable
     }
 
+    /// Cap stdin reads per run-loop cycle so a flooded pipe cannot starve layout/render.
+    /// Leftover bytes remain buffered by the OS and are drained on subsequent cycles.
+    private static let maxInputBytesPerCycle = 65_536
+
     private func readInput() throws -> [TerminalEvent] {
         var buffer = [UInt8](repeating: 0, count: 4096)
         var events: [TerminalEvent] = []
@@ -220,11 +224,13 @@ public final class Application {
         }
 
         var pendingError: Error?
-        while true {
+        var bytesProcessed = 0
+        while bytesProcessed < Self.maxInputBytesPerCycle {
             let bytesRead = read(STDIN_FILENO, &buffer, buffer.count)
             let readError = errno
 
             if bytesRead > 0 {
+                bytesProcessed += bytesRead
                 events.append(contentsOf: inputParser.feed(
                     Array(buffer.prefix(bytesRead)),
                     at: inputClock.now
