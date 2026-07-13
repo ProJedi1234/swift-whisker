@@ -35,7 +35,7 @@ public final class TestBackend: TerminalBackend, @unchecked Sendable {
         // No-op for test backend
     }
 
-    public func teardown() {
+    public func teardown() throws {
         // No-op for test backend
     }
 
