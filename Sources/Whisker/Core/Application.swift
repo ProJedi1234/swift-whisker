@@ -137,7 +137,7 @@ public final class Application {
         // revents checks below rely on.
         var fds = [
             pollfd(fd: stdinOpen ? STDIN_FILENO : -1, events: Int16(POLLIN), revents: 0),
-            pollfd(fd: signalReadFD, events: Int16(POLLIN), revents: 0),
+            pollfd(fd: signalReadFD, events: Int16(POLLIN), revents: 0)
         ]
 
         // The timeout only bounds work that carries no fd event: animation frames need a
