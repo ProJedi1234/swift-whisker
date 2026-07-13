@@ -56,14 +56,16 @@ final class NodeViewBuilder {
         node.render = { [weak node, text] frame, buffer in
             guard let node = node else { return }
             let style = text.style.resolved(with: node.environment)
-            let content = text.content
-            for (i, char) in content.prefix(frame.width).enumerated() {
-                buffer.draw(char, at: Position(x: frame.x + i, y: frame.y), style: style)
-            }
+            buffer.drawClipped(
+                text.content,
+                at: frame.origin,
+                maxWidth: frame.width,
+                style: style
+            )
         }
 
         node.layout = { proposal, _ in
-            let width = proposal.width.resolve(with: text.content.count)
+            let width = proposal.width.resolve(with: terminalTextWidth(text.content))
             let height = proposal.height.resolve(with: 1)
             return (Size(width: width, height: height), [])
         }

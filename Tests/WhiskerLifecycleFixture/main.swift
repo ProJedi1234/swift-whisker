@@ -16,6 +16,27 @@ if argument == "double-teardown" {
     }
 }
 
+if argument == "input" {
+    final class InputState {
+        var text = ""
+    }
+
+    let state = InputState()
+    let app = Application(mode: .inline) {
+        TextField(
+            get: { state.text },
+            set: { state.text = $0 }
+        )
+    }
+    do {
+        try app.run()
+        exit(0)
+    } catch {
+        FileHandle.standardError.write(Data("fixture failed: \(error)\n".utf8))
+        exit(1)
+    }
+}
+
 let mode: RenderMode = argument == "inline" ? .inline : .fullscreen
 let app: Application
 if argument == "mock" {

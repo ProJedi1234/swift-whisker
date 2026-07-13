@@ -26,6 +26,8 @@ public final class Application {
     /// stops polling a descriptor that would otherwise wake `poll()` forever. See
     /// `waitForActivity`.
     private var stdinOpen = true
+    private var inputParser: InputParser
+    private let inputClock = ContinuousClock()
     /// Number of animated views (e.g. `ActivityIndicator`) in the current tree.
     /// When non-zero, the run loop keeps scheduling redraws.
     var animationTickCount = 0
@@ -38,8 +40,14 @@ public final class Application {
     private let viewBuilder = NodeViewBuilder()
     let inlineRenderer = InlineRenderer()
 
-    public init<V: View>(mode: RenderMode = .fullscreen, backend: TerminalBackend = ANSIBackend(), @ViewBuilder rootView: @escaping () -> V) {
+    public init<V: View>(
+        mode: RenderMode = .fullscreen,
+        backend: TerminalBackend = ANSIBackend(),
+        escapeTimeout: Duration = .milliseconds(50),
+        @ViewBuilder rootView: @escaping () -> V
+    ) {
         self.backend = backend
+        self.inputParser = InputParser(escapeTimeout: escapeTimeout)
         self.backend.renderMode = mode
         self.rootViewBuilder = rootView
         Application.shared = self
@@ -97,6 +105,8 @@ public final class Application {
 
     private func runLoop(signalCoordinator: SignalCoordinator) throws {
         while isRunning {
+            var needsRender = false
+
             for signalNumber in try signalCoordinator.drain() {
                 try handleSignal(signalNumber, coordinator: signalCoordinator)
             }
@@ -105,15 +115,25 @@ public final class Application {
             // Park until a keystroke arrives or a signal fires, instead of spinning at a
             // fixed 60fps. Both the terminal and the signal self-pipe wake poll() the
             // instant they have data, so this is where the loop spends its idle time.
-            let stdinReady = try waitForActivity(signalReadFD: signalCoordinator.readFileDescriptor)
+            let stdinWasOpen = stdinOpen
+            let stdinReady = try waitForActivity(
+                signalReadFD: signalCoordinator.readFileDescriptor,
+                inputDeadline: inputParser.nextDeadline
+            )
 
-            if stdinReady, let event = try readInput() {
-                handleEvent(event)
+            if stdinReady {
+                needsRender = handleEvents(try readInput()) || needsRender
+            } else if stdinWasOpen && !stdinOpen {
+                needsRender = handleEvents(inputParser.finish()) || needsRender
             }
+            needsRender = handleEvents(inputParser.flushExpired(at: inputClock.now)) || needsRender
 
             if updateScheduled {
                 updateScheduled = false
                 rebuild()
+                render()
+                needsRender = false
+            } else if needsRender {
                 render()
             }
 
@@ -131,7 +151,10 @@ public final class Application {
     /// only bounds how long we sleep waiting for work that carries *no* file-descriptor
     /// event: animation frames, and `@State` updates scheduled from async `.task` closures
     /// on another thread (those flip `updateScheduled` without touching any fd).
-    private func waitForActivity(signalReadFD: Int32) throws -> Bool {
+    private func waitForActivity(
+        signalReadFD: Int32,
+        inputDeadline: ContinuousClock.Instant?
+    ) throws -> Bool {
         // A negative fd makes poll() ignore that slot (revents cleared), so once stdin
         // hangs up we stop watching it without disturbing the fixed array layout that the
         // revents checks below rely on.
@@ -145,11 +168,17 @@ public final class Application {
         // updates from `.task` still surface. Animation drives redraws by setting
         // `updateScheduled`, so it must be checked on its own — keying the timeout off
         // `updateScheduled` would collapse the frame interval to zero and busy-spin.
-        let timeoutMilliseconds: Int32
+        var timeoutMilliseconds: Int32
         if animationTickCount > 0 {
             timeoutMilliseconds = 16
         } else {
             timeoutMilliseconds = 50
+        }
+        if let inputDeadline {
+            timeoutMilliseconds = min(
+                timeoutMilliseconds,
+                millisecondsUntil(inputDeadline, from: inputClock.now)
+            )
         }
 
         let ready = poll(&fds, nfds_t(fds.count), timeoutMilliseconds)
@@ -178,8 +207,9 @@ public final class Application {
         return stdinReadable
     }
 
-    private func readInput() throws -> TerminalEvent? {
-        var buffer = [UInt8](repeating: 0, count: 16)
+    private func readInput() throws -> [TerminalEvent] {
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        var events: [TerminalEvent] = []
 
         let flags = fcntl(STDIN_FILENO, F_GETFL)
         guard flags != -1 else {
@@ -189,64 +219,110 @@ public final class Application {
             throw TerminalSystemError(operation: "fcntl(F_SETFL, O_NONBLOCK)", code: errno)
         }
 
-        let bytesRead = read(STDIN_FILENO, &buffer, buffer.count)
-        let readError = errno
+        var pendingError: Error?
+        while true {
+            let bytesRead = read(STDIN_FILENO, &buffer, buffer.count)
+            let readError = errno
+
+            if bytesRead > 0 {
+                events.append(contentsOf: inputParser.feed(
+                    Array(buffer.prefix(bytesRead)),
+                    at: inputClock.now
+                ))
+                continue
+            }
+
+            if bytesRead == 0 {
+                // In noncanonical mode VMIN is zero, so an empty read means there are no
+                // more bytes available right now. POLLHUP, handled by waitForActivity,
+                // is the authoritative EOF signal.
+                break
+            }
+
+            if readError == EAGAIN || readError == EWOULDBLOCK || readError == EINTR {
+                break
+            }
+            pendingError = TerminalSystemError(operation: "read terminal input", code: readError)
+            break
+        }
+
         guard fcntl(STDIN_FILENO, F_SETFL, flags) != -1 else {
             throw TerminalSystemError(operation: "fcntl(F_SETFL, restore)", code: errno)
         }
+        if let pendingError { throw pendingError }
+        return events
+    }
 
-        if bytesRead == -1 {
-            if readError == EAGAIN || readError == EWOULDBLOCK || readError == EINTR {
-                return nil
-            }
-            throw TerminalSystemError(operation: "read terminal input", code: readError)
+    private func handleEvents(_ events: [TerminalEvent]) -> Bool {
+        events.reduce(false) { handled, event in
+            handleEvent(event) || handled
         }
-        guard bytesRead > 0 else { return nil }
-
-        return parseInput(Array(buffer.prefix(bytesRead)))
     }
 
-    private func parseInput(_ bytes: [UInt8]) -> TerminalEvent? {
-        guard !bytes.isEmpty else { return nil }
-        return InputParser.parse(bytes)
-    }
-
-    private func handleEvent(_ event: TerminalEvent) {
+    private func handleEvent(_ event: TerminalEvent) -> Bool {
         switch event {
         case .key(let keyEvent):
-            handleKey(keyEvent)
+            return handleKey(keyEvent)
+        case .text(let text), .paste(let text):
+            return handleText(text)
         case .resize(let size):
             // Relayout and rerender
             if let root = rootNode {
                 layout(root, in: Rect(origin: .zero, size: size))
             }
-            render()
+            return true
         case .mouse:
-            break // TODO: Implement mouse event handling
+            return false // TODO: Implement mouse event handling
         }
     }
 
-    private func handleKey(_ event: KeyEvent) {
+    private func handleKey(_ event: KeyEvent) -> Bool {
         if event.key == .tab || event.key == .up || event.key == .down {
             if event.key == .up || (event.key == .tab && event.modifiers.contains(.shift)) {
                 FocusManager.moveFocusPrevious(root: rootNode, focusedIndex: &focusedIndex, focusedNode: &focusedNode)
             } else {
                 FocusManager.moveFocusNext(root: rootNode, focusedIndex: &focusedIndex, focusedNode: &focusedNode)
             }
-            render()
-            return
+            return true
         }
 
         if let focused = focusedNode {
             deliverKeyToNode(focused, event: event)
-            render()
+            return true
         }
+        return false
+    }
+
+    private func handleText(_ text: String) -> Bool {
+        guard let focused = focusedNode else { return false }
+        if let handler = focused[.textInputHandler] {
+            handler(text)
+        } else {
+            for character in text {
+                deliverKeyToNode(focused, event: KeyEvent(key: .char(character)))
+            }
+        }
+        return true
     }
 
     private func deliverKeyToNode(_ node: Node, event: KeyEvent) {
         if let handler = node[.keyHandler] {
             handler(event)
         }
+    }
+
+    private func millisecondsUntil(
+        _ deadline: ContinuousClock.Instant,
+        from now: ContinuousClock.Instant
+    ) -> Int32 {
+        let duration = now.duration(to: deadline)
+        if duration <= .zero { return 0 }
+        let components = duration.components
+        let millisecondsFromSeconds = components.seconds.multipliedReportingOverflow(by: 1_000)
+        if millisecondsFromSeconds.overflow { return Int32.max }
+        let fractionalMilliseconds = (components.attoseconds + 999_999_999_999_999) / 1_000_000_000_000_000
+        let total = millisecondsFromSeconds.partialValue + fractionalMilliseconds
+        return Int32(clamping: total)
     }
 
     func rebuild() {
@@ -319,7 +395,7 @@ public final class Application {
     private func positionCursorAtFocus() {
         if let focused = focusedNode,
            focused[.getText] != nil {
-            let cursorX = focused.frame.x + (focused[.cursorPosition] ?? 0)
+            let cursorX = focused.frame.x + textInputCursorColumn(for: focused)
             backend.moveCursor(to: Position(x: cursorX, y: focused.frame.y))
             backend.setCursorVisible(true)
         } else {

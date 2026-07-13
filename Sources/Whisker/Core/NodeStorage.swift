@@ -1,6 +1,7 @@
 /// Type-safe keys for node storage
 enum NodeStorageKey {
     static let keyHandler = NodeKey<(KeyEvent) -> Void>("_keyHandler")
+    static let textInputHandler = NodeKey<(String) -> Void>("_textInputHandler")
     static let getText = NodeKey<() -> String>("_getText")
     static let setText = NodeKey<(String) -> Void>("_setText")
     static let placeholder = NodeKey<String>("_placeholder")
@@ -25,6 +26,7 @@ extension Node {
 
 extension NodeKey {
     static var keyHandler: NodeKey<(KeyEvent) -> Void> { NodeStorageKey.keyHandler }
+    static var textInputHandler: NodeKey<(String) -> Void> { NodeStorageKey.textInputHandler }
     static var getText: NodeKey<() -> String> { NodeStorageKey.getText }
     static var setText: NodeKey<(String) -> Void> { NodeStorageKey.setText }
     static var placeholder: NodeKey<String> { NodeStorageKey.placeholder }

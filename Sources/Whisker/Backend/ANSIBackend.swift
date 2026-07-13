@@ -46,7 +46,10 @@ public final class ANSIBackend: TerminalBackend, @unchecked Sendable {
             }
 
             appendToBuffer(String(cmd.cell.char))
-            currentPos = Position(x: cmd.position.x + 1, y: cmd.position.y)
+            currentPos = Position(
+                x: cmd.position.x + terminalCellWidth(cmd.cell.char),
+                y: cmd.position.y
+            )
         }
     }
 
@@ -97,6 +100,7 @@ public final class ANSIBackend: TerminalBackend, @unchecked Sendable {
             break
         }
 
+        appendToBuffer(ANSI.bracketedPasteOn)
         appendToBuffer(ANSI.cursorHide)
         flush()
     }
@@ -105,6 +109,7 @@ public final class ANSIBackend: TerminalBackend, @unchecked Sendable {
         var firstError: Error?
 
         if presentationEnabled {
+            appendToBuffer(ANSI.bracketedPasteOff)
             appendToBuffer(ANSI.cursorShow)
 
             switch renderMode {
@@ -169,6 +174,8 @@ internal enum ANSI {
     static let cursorShow = "\u{1b}[?25h"
     static let alternateScreenOn = "\u{1b}[?1049h"
     static let alternateScreenOff = "\u{1b}[?1049l"
+    static let bracketedPasteOn = "\u{1b}[?2004h"
+    static let bracketedPasteOff = "\u{1b}[?2004l"
 
     static func moveTo(_ pos: Position) -> String {
         "\u{1b}[\(pos.y + 1);\(pos.x + 1)H"

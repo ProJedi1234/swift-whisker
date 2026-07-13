@@ -3,6 +3,10 @@ import Foundation
 /// Input events from the terminal
 public enum TerminalEvent: Sendable {
     case key(KeyEvent)
+    /// Printable UTF-8 input that may contain more than one character.
+    case text(String)
+    /// Text received while the terminal's bracketed-paste mode is active.
+    case paste(String)
     case resize(Size)
     case mouse(MouseEvent)
 }

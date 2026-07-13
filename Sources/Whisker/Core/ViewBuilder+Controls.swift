@@ -47,6 +47,7 @@ extension NodeViewBuilder {
         let secureFieldWidth = 20
 
         node[.keyHandler] = makeInputFieldKeyHandler(for: node)
+        node[.textInputHandler] = makeInputFieldTextHandler(for: node)
         node.render = makeInputFieldRenderClosure(for: node, isSecure: isSecure)
 
         node.layout = { [weak node] proposal, _ in
@@ -54,7 +55,9 @@ extension NodeViewBuilder {
             let text = node[.getText]?() ?? ""
             let placeholder = node[.placeholder] ?? ""
             let displayText = text.isEmpty ? placeholder : text
-            let displayWidth = isSecure ? secureFieldWidth : displayText.count
+            let displayWidth = isSecure
+                ? secureFieldWidth
+                : terminalTextWidth(displayText, replacingControlCharacters: true)
             let width = proposal.width.resolve(with: displayWidth)
             return (Size(width: width, height: 1), [])
         }
@@ -73,6 +76,26 @@ extension NodeViewBuilder {
 
             setText(text)
             node[.cursorPosition] = cursor
+            Application.shared?.scheduleUpdate()
+        }
+    }
+
+    private func makeInputFieldTextHandler(for node: Node) -> (String) -> Void {
+        return { [weak node] insertedText in
+            guard let node,
+                  let getText = node[.getText],
+                  let setText = node[.setText]
+            else { return }
+
+            let text = getText()
+            let cursor = min(max(0, node[.cursorPosition] ?? text.count), text.count)
+            let insertionIndex = text.index(text.startIndex, offsetBy: cursor)
+            let prefix = String(text[..<insertionIndex])
+            let suffix = String(text[insertionIndex...])
+            let textThroughInsertion = prefix + insertedText
+
+            setText(textThroughInsertion + suffix)
+            node[.cursorPosition] = textThroughInsertion.count
             Application.shared?.scheduleUpdate()
         }
     }
@@ -137,9 +160,13 @@ extension NodeViewBuilder {
                 style = Style().resolved(with: node.environment)
             }
 
-            for (i, char) in displayText.prefix(frame.width).enumerated() {
-                buffer.draw(char, at: Position(x: frame.x + i, y: frame.y), style: style)
-            }
+            buffer.drawClipped(
+                displayText,
+                at: frame.origin,
+                maxWidth: frame.width,
+                style: style,
+                replacingControlCharacters: true
+            )
         }
     }
 
