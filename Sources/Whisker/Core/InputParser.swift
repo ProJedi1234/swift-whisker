@@ -1,6 +1,27 @@
 struct InputParser {
     private static let bracketedPasteStart = Array("\u{1b}[200~".utf8)
     private static let bracketedPasteEnd = Array("\u{1b}[201~".utf8)
+    private static let tildeKeys: [Int: Key] = [
+        1: .home,
+        3: .delete,
+        4: .end,
+        5: .pageUp,
+        6: .pageDown,
+        7: .home,
+        8: .end,
+        11: .f(1),
+        12: .f(2),
+        13: .f(3),
+        14: .f(4),
+        15: .f(5),
+        17: .f(6),
+        18: .f(7),
+        19: .f(8),
+        20: .f(9),
+        21: .f(10),
+        23: .f(11),
+        24: .f(12)
+    ]
 
     let escapeTimeout: Duration
 
@@ -232,27 +253,7 @@ struct InputParser {
         case UInt8(ascii: "F"): key = .end
         case UInt8(ascii: "Z"):
             return .key(KeyEvent(key: .tab, modifiers: .shift))
-        case UInt8(ascii: "~"):
-            switch Int(parameters) {
-            case 1, 7: key = .home
-            case 3: key = .delete
-            case 4, 8: key = .end
-            case 5: key = .pageUp
-            case 6: key = .pageDown
-            case 11: key = .f(1)
-            case 12: key = .f(2)
-            case 13: key = .f(3)
-            case 14: key = .f(4)
-            case 15: key = .f(5)
-            case 17: key = .f(6)
-            case 18: key = .f(7)
-            case 19: key = .f(8)
-            case 20: key = .f(9)
-            case 21: key = .f(10)
-            case 23: key = .f(11)
-            case 24: key = .f(12)
-            default: key = nil
-            }
+        case UInt8(ascii: "~"): key = Int(parameters).flatMap { Self.tildeKeys[$0] }
         default: key = nil
         }
 
