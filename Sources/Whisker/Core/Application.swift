@@ -22,6 +22,10 @@ public final class Application {
     var focusedIndex: Int = 0
     var updateScheduled = false
     var isRunning = false
+    /// Cleared when stdin reaches EOF (e.g. redirected input hangs up) so the run loop
+    /// stops polling a descriptor that would otherwise wake `poll()` forever. See
+    /// `waitForActivity`.
+    private var stdinOpen = true
     /// Number of animated views (e.g. `ActivityIndicator`) in the current tree.
     /// When non-zero, the run loop keeps scheduling redraws.
     var animationTickCount = 0
@@ -128,18 +132,21 @@ public final class Application {
     /// event: animation frames, and `@State` updates scheduled from async `.task` closures
     /// on another thread (those flip `updateScheduled` without touching any fd).
     private func waitForActivity(signalReadFD: Int32) throws -> Bool {
+        // A negative fd makes poll() ignore that slot (revents cleared), so once stdin
+        // hangs up we stop watching it without disturbing the fixed array layout that the
+        // revents checks below rely on.
         var fds = [
-            pollfd(fd: STDIN_FILENO, events: Int16(POLLIN), revents: 0),
+            pollfd(fd: stdinOpen ? STDIN_FILENO : -1, events: Int16(POLLIN), revents: 0),
             pollfd(fd: signalReadFD, events: Int16(POLLIN), revents: 0),
         ]
 
-        // The timeout only bounds work with no fd to wake poll(): a redraw already queued
-        // (service it now), animation frames (60fps cadence), or an idle screen (sleep,
-        // but cap it so cross-thread @State updates surface promptly).
+        // The timeout only bounds work that carries no fd event: animation frames need a
+        // ~60fps cadence; an idle screen sleeps longer, capped so cross-thread @State
+        // updates from `.task` still surface. Animation drives redraws by setting
+        // `updateScheduled`, so it must be checked on its own — keying the timeout off
+        // `updateScheduled` would collapse the frame interval to zero and busy-spin.
         let timeoutMilliseconds: Int32
-        if updateScheduled {
-            timeoutMilliseconds = 0
-        } else if animationTickCount > 0 {
+        if animationTickCount > 0 {
             timeoutMilliseconds = 16
         } else {
             timeoutMilliseconds = 50
@@ -150,7 +157,25 @@ public final class Application {
             if errno == EINTR { return false }
             throw TerminalSystemError(operation: "poll terminal input", code: errno)
         }
-        return (fds[0].revents & Int16(POLLIN)) != 0
+
+        // POLLERR/POLLNVAL stay asserted on every poll(), so a broken descriptor would
+        // spin the loop at full speed. Treat either as unrecoverable rather than looping.
+        let errorFlags = Int16(POLLERR) | Int16(POLLNVAL)
+        if (fds[1].revents & errorFlags) != 0 {
+            throw TerminalSystemError(operation: "poll signal pipe", code: EIO)
+        }
+        if (fds[0].revents & errorFlags) != 0 {
+            throw TerminalSystemError(operation: "poll terminal input", code: EIO)
+        }
+
+        // POLLHUP means stdin's source closed (e.g. redirected input reached EOF). It also
+        // stays asserted, so once any buffered input (POLLIN) is drained, stop watching
+        // stdin; signals and the timeout keep the loop alive.
+        let stdinReadable = (fds[0].revents & Int16(POLLIN)) != 0
+        if !stdinReadable && (fds[0].revents & Int16(POLLHUP)) != 0 {
+            stdinOpen = false
+        }
+        return stdinReadable
     }
 
     private func readInput() throws -> TerminalEvent? {
