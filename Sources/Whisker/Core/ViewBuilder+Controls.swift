@@ -176,9 +176,9 @@ extension NodeViewBuilder {
         case .delete:
             PasteCollapse.deleteForward(displayText: &displayText, cursor: &cursor, store: &store)
         case .left:
-            PasteCollapse.moveLeft(cursor: &cursor, in: displayText)
+            PasteCollapse.moveLeft(cursor: &cursor, in: displayText, store: store)
         case .right:
-            PasteCollapse.moveRight(cursor: &cursor, in: displayText)
+            PasteCollapse.moveRight(cursor: &cursor, in: displayText, store: store)
         case .home:
             cursor = 0
         case .end:

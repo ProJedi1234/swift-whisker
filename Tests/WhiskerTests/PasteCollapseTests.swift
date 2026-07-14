@@ -98,11 +98,26 @@ final class PasteCollapseTests: XCTestCase {
             store: &store
         )
         // cursor is after sentinel
-        PasteCollapse.moveLeft(cursor: &cursor, in: display)
+        PasteCollapse.moveLeft(cursor: &cursor, in: display, store: store)
         XCTAssertEqual(cursor, 1) // before sentinel (after "x")
 
-        PasteCollapse.moveRight(cursor: &cursor, in: display)
+        PasteCollapse.moveRight(cursor: &cursor, in: display, store: store)
         XCTAssertEqual(cursor, display.count)
+    }
+
+    func testSentinelShapedUserTextStaysLiteral() {
+        // User text that mimics a marker but has no store entry must survive
+        // expansion unchanged and never be treated as a paste reference.
+        let fake = "a\(PasteCollapse.makeSentinel(id: "deadbeef"))b"
+        let store: [String: String] = [:]
+
+        XCTAssertTrue(PasteCollapse.sentinelSpans(in: fake, store: store).isEmpty)
+        XCTAssertEqual(PasteCollapse.expand(displayText: fake, store: store), fake)
+        XCTAssertEqual(PasteCollapse.visualString(displayText: fake, store: store), fake)
+
+        var cursor = fake.count
+        PasteCollapse.moveLeft(cursor: &cursor, in: fake, store: store)
+        XCTAssertEqual(cursor, fake.count - 1) // one char, not the whole span
     }
 
     func testVisualWidthCountsLabelNotSentinel() {

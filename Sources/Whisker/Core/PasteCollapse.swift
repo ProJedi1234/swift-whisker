@@ -45,8 +45,13 @@ enum PasteCollapse {
         "\(sentinelStart)\(id)\(sentinelEnd)"
     }
 
-    /// Scans `displayText` for well-formed sentinel spans.
-    static func sentinelSpans(in displayText: String) -> [SentinelSpan] {
+    /// Scans `displayText` for well-formed sentinel spans whose id exists in
+    /// `store`. Sentinel-shaped sequences with unknown ids are literal text,
+    /// so arbitrary input can never alias a paste marker.
+    static func sentinelSpans(
+        in displayText: String,
+        store: [String: String]
+    ) -> [SentinelSpan] {
         var spans: [SentinelSpan] = []
         var offset = 0
         var index = displayText.startIndex
@@ -69,10 +74,11 @@ enum PasteCollapse {
                     offset += 1
                 }
 
+                let id = String(idChars)
                 if index < displayText.endIndex,
                    displayText[index] == sentinelEnd,
                    idChars.count == 8,
-                   idChars.allSatisfy({ $0.isHexDigit })
+                   store[id] != nil
                 {
                     displayText.formIndex(after: &index)
                     offset += 1
@@ -82,13 +88,13 @@ enum PasteCollapse {
                             range: startIndex..<endIndex,
                             startOffset: startOffset,
                             length: offset - startOffset,
-                            id: String(idChars)
+                            id: id
                         )
                     )
                     continue
                 }
 
-                // Malformed — treat as ordinary characters already consumed.
+                // Malformed or unknown id — literal characters already consumed.
                 continue
             }
 
@@ -99,18 +105,30 @@ enum PasteCollapse {
         return spans
     }
 
-    static func span(atOffset offset: Int, in displayText: String) -> SentinelSpan? {
-        sentinelSpans(in: displayText).first {
+    static func span(
+        atOffset offset: Int,
+        in displayText: String,
+        store: [String: String]
+    ) -> SentinelSpan? {
+        sentinelSpans(in: displayText, store: store).first {
             offset >= $0.startOffset && offset < $0.endOffset
         }
     }
 
-    static func spanEnding(at offset: Int, in displayText: String) -> SentinelSpan? {
-        sentinelSpans(in: displayText).first { $0.endOffset == offset }
+    static func spanEnding(
+        at offset: Int,
+        in displayText: String,
+        store: [String: String]
+    ) -> SentinelSpan? {
+        sentinelSpans(in: displayText, store: store).first { $0.endOffset == offset }
     }
 
-    static func spanStarting(at offset: Int, in displayText: String) -> SentinelSpan? {
-        sentinelSpans(in: displayText).first { $0.startOffset == offset }
+    static func spanStarting(
+        at offset: Int,
+        in displayText: String,
+        store: [String: String]
+    ) -> SentinelSpan? {
+        sentinelSpans(in: displayText, store: store).first { $0.startOffset == offset }
     }
 
     // MARK: - Expand / visual
@@ -119,7 +137,7 @@ enum PasteCollapse {
         var result = ""
         var offset = 0
         var index = displayText.startIndex
-        let spans = sentinelSpans(in: displayText)
+        let spans = sentinelSpans(in: displayText, store: store)
         var spanIndex = 0
 
         while index < displayText.endIndex {
@@ -143,7 +161,7 @@ enum PasteCollapse {
         var result = ""
         var offset = 0
         var index = displayText.startIndex
-        let spans = sentinelSpans(in: displayText)
+        let spans = sentinelSpans(in: displayText, store: store)
         var spanIndex = 0
 
         while index < displayText.endIndex {
@@ -176,7 +194,7 @@ enum PasteCollapse {
         var width = 0
         var offset = 0
         var index = displayText.startIndex
-        let spans = sentinelSpans(in: displayText)
+        let spans = sentinelSpans(in: displayText, store: store)
         var spanIndex = 0
 
         while offset < clamped, index < displayText.endIndex {
@@ -214,9 +232,13 @@ enum PasteCollapse {
     // MARK: - Atomic editing
 
     /// Moves the cursor left across a sentinel as one unit if adjacent.
-    static func moveLeft(cursor: inout Int, in displayText: String) {
+    static func moveLeft(
+        cursor: inout Int,
+        in displayText: String,
+        store: [String: String]
+    ) {
         guard cursor > 0 else { return }
-        if let span = spanEnding(at: cursor, in: displayText) {
+        if let span = spanEnding(at: cursor, in: displayText, store: store) {
             cursor = span.startOffset
         } else {
             cursor -= 1
@@ -224,10 +246,14 @@ enum PasteCollapse {
     }
 
     /// Moves the cursor right across a sentinel as one unit if adjacent.
-    static func moveRight(cursor: inout Int, in displayText: String) {
+    static func moveRight(
+        cursor: inout Int,
+        in displayText: String,
+        store: [String: String]
+    ) {
         let maxOffset = displayText.count
         guard cursor < maxOffset else { return }
-        if let span = spanStarting(at: cursor, in: displayText) {
+        if let span = spanStarting(at: cursor, in: displayText, store: store) {
             cursor = span.endOffset
         } else {
             cursor += 1
@@ -243,7 +269,7 @@ enum PasteCollapse {
         store: inout [String: String]
     ) -> String? {
         guard cursor > 0 else { return nil }
-        if let span = spanEnding(at: cursor, in: displayText) {
+        if let span = spanEnding(at: cursor, in: displayText, store: store) {
             let id = span.id
             displayText.removeSubrange(span.range)
             store.removeValue(forKey: id)
@@ -265,7 +291,7 @@ enum PasteCollapse {
         store: inout [String: String]
     ) -> String? {
         guard cursor < displayText.count else { return nil }
-        if let span = spanStarting(at: cursor, in: displayText) {
+        if let span = spanStarting(at: cursor, in: displayText, store: store) {
             let id = span.id
             displayText.removeSubrange(span.range)
             store.removeValue(forKey: id)
@@ -295,7 +321,10 @@ enum PasteCollapse {
         cursor: inout Int,
         store: inout [String: String]
     ) -> String {
-        let id = makeID()
+        var id = makeID()
+        while store[id] != nil {
+            id = makeID()
+        }
         store[id] = payload
         let sentinel = makeSentinel(id: id)
         insertRaw(sentinel, into: &displayText, cursor: &cursor)
