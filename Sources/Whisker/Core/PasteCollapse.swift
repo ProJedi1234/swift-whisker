@@ -1,3 +1,5 @@
+import Foundation
+
 /// Collapses large pastes into atomic display markers while keeping bindings expanded.
 enum PasteCollapse {
     /// Pastes with at least this many whitespace-separated words become markers.
