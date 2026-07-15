@@ -236,4 +236,179 @@ final class WhiskerIntegrationTests: XCTestCase {
 
         XCTAssertEqual(buffer.commands.map(\.cell.char), ["a", " ", " ", "b"])
     }
+
+    func testLargePasteCollapsesInRenderButExpandsBinding() {
+        var text = ""
+        let node = Node(viewType: TextField.self)
+        let viewBuilder = NodeViewBuilder()
+        viewBuilder.buildInputFieldNode(
+            node,
+            getText: { text },
+            setText: { text = $0 },
+            placeholder: "",
+            isSecure: false
+        )
+
+        let payload = (1...50).map { "w\($0)" }.joined(separator: " ")
+        node[.pasteInputHandler]?(payload)
+
+        XCTAssertEqual(text, payload)
+        XCTAssertNotEqual(node[.displayText], payload)
+        XCTAssertEqual(
+            PasteCollapse.visualString(
+                displayText: node[.displayText] ?? "",
+                store: node[.pasteStore] ?? [:]
+            ),
+            "[Pasted 50 words]"
+        )
+
+        node.frame = Rect(x: 0, y: 0, width: 40, height: 1)
+        var buffer = RenderBuffer()
+        node.render?(node.frame, &buffer)
+        let rendered = String(buffer.commands.map(\.cell.char))
+        XCTAssertTrue(rendered.contains("[Pasted 50 words]"))
+        XCTAssertFalse(rendered.contains("w1"))
+    }
+
+    func testSmallPasteInsertsInline() {
+        var text = "x"
+        let node = Node(viewType: TextField.self)
+        let viewBuilder = NodeViewBuilder()
+        viewBuilder.buildInputFieldNode(
+            node,
+            getText: { text },
+            setText: { text = $0 },
+            placeholder: "",
+            isSecure: false
+        )
+        node[.cursorPosition] = 1
+        node[.pasteInputHandler]?("yes")
+
+        XCTAssertEqual(text, "xyes")
+        XCTAssertEqual(node[.displayText], "xyes")
+        XCTAssertTrue((node[.pasteStore] ?? [:]).isEmpty)
+    }
+
+    func testSecureFieldDoesNotCollapseLargePaste() {
+        var text = ""
+        let node = Node(viewType: SecureField.self)
+        let viewBuilder = NodeViewBuilder()
+        viewBuilder.buildInputFieldNode(
+            node,
+            getText: { text },
+            setText: { text = $0 },
+            placeholder: "",
+            isSecure: true
+        )
+
+        let payload = (1...50).map { "w\($0)" }.joined(separator: " ")
+        node[.pasteInputHandler]?(payload)
+
+        XCTAssertEqual(text, payload)
+        XCTAssertEqual(node[.displayText], payload)
+        XCTAssertTrue((node[.pasteStore] ?? [:]).isEmpty)
+    }
+
+    func testRebuildPreservesMarkersWhenBindingUnchanged() {
+        var text = ""
+        let viewBuilder = NodeViewBuilder()
+        let first = Node(viewType: TextField.self)
+        viewBuilder.buildInputFieldNode(
+            first,
+            getText: { text },
+            setText: { text = $0 },
+            placeholder: "",
+            isSecure: false
+        )
+
+        let payload = (1...50).map { "w\($0)" }.joined(separator: " ")
+        first[.pasteInputHandler]?(payload)
+        let displayBefore = first[.displayText]
+        let storeBefore = first[.pasteStore]
+
+        let second = Node(viewType: TextField.self)
+        viewBuilder.buildInputFieldNode(
+            second,
+            getText: { text },
+            setText: { text = $0 },
+            placeholder: "",
+            isSecure: false,
+            existing: first
+        )
+
+        XCTAssertEqual(second[.displayText], displayBefore)
+        XCTAssertEqual(second[.pasteStore], storeBefore)
+        XCTAssertEqual(text, payload)
+    }
+
+    func testExternalBindingChangeClearsMarkers() {
+        var text = ""
+        let viewBuilder = NodeViewBuilder()
+        let first = Node(viewType: TextField.self)
+        viewBuilder.buildInputFieldNode(
+            first,
+            getText: { text },
+            setText: { text = $0 },
+            placeholder: "",
+            isSecure: false
+        )
+
+        let payload = (1...50).map { "w\($0)" }.joined(separator: " ")
+        first[.pasteInputHandler]?(payload)
+
+        text = "replaced externally"
+        let second = Node(viewType: TextField.self)
+        viewBuilder.buildInputFieldNode(
+            second,
+            getText: { text },
+            setText: { text = $0 },
+            placeholder: "",
+            isSecure: false,
+            existing: first
+        )
+
+        XCTAssertEqual(second[.displayText], "replaced externally")
+        XCTAssertTrue((second[.pasteStore] ?? [:]).isEmpty)
+    }
+
+    func testCursorColumnAfterCollapsedPasteUsesLabelWidth() {
+        var text = "hi "
+        let node = Node(viewType: TextField.self)
+        let viewBuilder = NodeViewBuilder()
+        viewBuilder.buildInputFieldNode(
+            node,
+            getText: { text },
+            setText: { text = $0 },
+            placeholder: "",
+            isSecure: false
+        )
+        node[.cursorPosition] = 3
+
+        let payload = (1...50).map { "w\($0)" }.joined(separator: " ")
+        node[.pasteInputHandler]?(payload)
+
+        let expected = terminalTextWidth("hi [Pasted 50 words]", replacingControlCharacters: true)
+        XCTAssertEqual(textInputCursorColumn(for: node), expected)
+    }
+
+    func testAtomicBackspaceRemovesCollapsedPasteFromField() {
+        var text = ""
+        let node = Node(viewType: TextField.self)
+        let viewBuilder = NodeViewBuilder()
+        viewBuilder.buildInputFieldNode(
+            node,
+            getText: { text },
+            setText: { text = $0 },
+            placeholder: "",
+            isSecure: false
+        )
+
+        let payload = (1...50).map { "w\($0)" }.joined(separator: " ")
+        node[.pasteInputHandler]?(payload)
+        node[.keyHandler]?(KeyEvent(key: .backspace))
+
+        XCTAssertEqual(text, "")
+        XCTAssertEqual(node[.displayText], "")
+        XCTAssertTrue((node[.pasteStore] ?? [:]).isEmpty)
+    }
 }

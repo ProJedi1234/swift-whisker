@@ -28,16 +28,18 @@ func terminalTextWidth(
 }
 
 func textInputCursorColumn(for node: Node) -> Int {
-    let text = node[.getText]?() ?? ""
+    let displayText = node[.displayText] ?? node[.getText]?() ?? ""
     let characterOffset = min(
-        max(0, node[.cursorPosition] ?? text.count),
-        text.count
+        max(0, node[.cursorPosition] ?? displayText.count),
+        displayText.count
     )
     if node[.isSecure] == true { return characterOffset }
 
-    let index = text.index(text.startIndex, offsetBy: characterOffset)
-    return terminalTextWidth(
-        text[..<index],
+    let store = node[.pasteStore] ?? [:]
+    return PasteCollapse.visualWidth(
+        displayText: displayText,
+        store: store,
+        upToCharacterOffset: characterOffset,
         replacingControlCharacters: true
     )
 }

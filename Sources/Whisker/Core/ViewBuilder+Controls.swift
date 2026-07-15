@@ -37,96 +37,152 @@ extension NodeViewBuilder {
         node[.placeholder] = placeholder
         node[.isSecure] = isSecure
 
-        // Preserve cursor position from old node, or default to end of text
+        let bindingText = getText()
+        reconcileDisplayBuffer(for: node, bindingText: bindingText, existing: existing)
+
+        let displayText = node[.displayText] ?? bindingText
         if let existing = existing, let oldCursor = existing[.cursorPosition] {
-            node[.cursorPosition] = min(oldCursor, getText().count)
+            node[.cursorPosition] = min(oldCursor, displayText.count)
         } else {
-            node[.cursorPosition] = getText().count
+            node[.cursorPosition] = displayText.count
         }
 
         let secureFieldWidth = 20
 
         node[.keyHandler] = makeInputFieldKeyHandler(for: node)
         node[.textInputHandler] = makeInputFieldTextHandler(for: node)
+        node[.pasteInputHandler] = makeInputFieldPasteHandler(for: node)
         node.render = makeInputFieldRenderClosure(for: node, isSecure: isSecure)
 
         node.layout = { [weak node] proposal, _ in
             guard let node = node else { return (.zero, []) }
-            let text = node[.getText]?() ?? ""
             let placeholder = node[.placeholder] ?? ""
-            let displayText = text.isEmpty ? placeholder : text
+            let store = node[.pasteStore] ?? [:]
+            let rawDisplay = node[.displayText] ?? ""
+            let visual = isSecure
+                ? rawDisplay
+                : PasteCollapse.visualString(displayText: rawDisplay, store: store)
+            let shown = visual.isEmpty ? placeholder : visual
             let displayWidth = isSecure
                 ? secureFieldWidth
-                : terminalTextWidth(displayText, replacingControlCharacters: true)
+                : terminalTextWidth(shown, replacingControlCharacters: true)
             let width = proposal.width.resolve(with: displayWidth)
             return (Size(width: width, height: 1), [])
         }
     }
 
+    private func reconcileDisplayBuffer(
+        for node: Node,
+        bindingText: String,
+        existing: Node?
+    ) {
+        if let existing,
+           let previousDisplay = existing[.displayText]
+        {
+            let previousStore = existing[.pasteStore] ?? [:]
+            let expanded = PasteCollapse.expand(displayText: previousDisplay, store: previousStore)
+            if expanded == bindingText {
+                node[.displayText] = previousDisplay
+                node[.pasteStore] = previousStore
+                return
+            }
+        }
+
+        node[.displayText] = bindingText
+        node[.pasteStore] = [:]
+    }
+
+    private static func syncBinding(from node: Node) {
+        guard let setText = node[.setText] else { return }
+        let displayText = node[.displayText] ?? ""
+        let store = node[.pasteStore] ?? [:]
+        setText(PasteCollapse.expand(displayText: displayText, store: store))
+    }
+
     private func makeInputFieldKeyHandler(for node: Node) -> (KeyEvent) -> Void {
         return { [weak node] (event: KeyEvent) in
             guard let node = node else { return }
-            guard let getText = node[.getText],
-                let setText = node[.setText]
-            else { return }
+            var displayText = node[.displayText] ?? ""
+            var store = node[.pasteStore] ?? [:]
+            var cursor = node[.cursorPosition] ?? displayText.count
+            NodeViewBuilder.applyKeyEdit(
+                event.key,
+                displayText: &displayText,
+                cursor: &cursor,
+                store: &store
+            )
 
-            var text = getText()
-            var cursor = node[.cursorPosition] ?? text.count
-            NodeViewBuilder.applyKeyEdit(event.key, text: &text, cursor: &cursor)
-
-            setText(text)
+            node[.displayText] = displayText
+            node[.pasteStore] = store
             node[.cursorPosition] = cursor
+            NodeViewBuilder.syncBinding(from: node)
             Application.shared?.scheduleUpdate()
         }
     }
 
     private func makeInputFieldTextHandler(for node: Node) -> (String) -> Void {
         return { [weak node] insertedText in
-            guard let node,
-                  let getText = node[.getText],
-                  let setText = node[.setText]
-            else { return }
-
-            let text = getText()
-            let cursor = min(max(0, node[.cursorPosition] ?? text.count), text.count)
-            let insertionIndex = text.index(text.startIndex, offsetBy: cursor)
-            let prefix = String(text[..<insertionIndex])
-            let suffix = String(text[insertionIndex...])
-            let textThroughInsertion = prefix + insertedText
-
-            setText(textThroughInsertion + suffix)
-            node[.cursorPosition] = textThroughInsertion.count
+            guard let node else { return }
+            var displayText = node[.displayText] ?? ""
+            var cursor = min(max(0, node[.cursorPosition] ?? displayText.count), displayText.count)
+            PasteCollapse.insertRaw(insertedText, into: &displayText, cursor: &cursor)
+            node[.displayText] = displayText
+            node[.cursorPosition] = cursor
+            NodeViewBuilder.syncBinding(from: node)
             Application.shared?.scheduleUpdate()
         }
     }
 
-    private static func applyKeyEdit(_ key: Key, text: inout String, cursor: inout Int) {
-        cursor = min(max(0, cursor), text.count)
+    private func makeInputFieldPasteHandler(for node: Node) -> (String) -> Void {
+        return { [weak node] pastedText in
+            guard let node else { return }
+            var displayText = node[.displayText] ?? ""
+            var store = node[.pasteStore] ?? [:]
+            var cursor = min(max(0, node[.cursorPosition] ?? displayText.count), displayText.count)
+            let isSecure = node[.isSecure] == true
+
+            if isSecure || !PasteCollapse.shouldCollapse(pastedText) {
+                PasteCollapse.insertRaw(pastedText, into: &displayText, cursor: &cursor)
+            } else {
+                _ = PasteCollapse.insertCollapsedPaste(
+                    pastedText,
+                    into: &displayText,
+                    cursor: &cursor,
+                    store: &store
+                )
+            }
+
+            node[.displayText] = displayText
+            node[.pasteStore] = store
+            node[.cursorPosition] = cursor
+            NodeViewBuilder.syncBinding(from: node)
+            Application.shared?.scheduleUpdate()
+        }
+    }
+
+    private static func applyKeyEdit(
+        _ key: Key,
+        displayText: inout String,
+        cursor: inout Int,
+        store: inout [String: String]
+    ) {
+        cursor = min(max(0, cursor), displayText.count)
 
         switch key {
         case .char(let c):
-            let index = text.index(text.startIndex, offsetBy: cursor)
-            text.insert(c, at: index)
-            cursor += 1
+            PasteCollapse.insertRaw(String(c), into: &displayText, cursor: &cursor)
         case .backspace:
-            if cursor > 0 && !text.isEmpty {
-                let index = text.index(text.startIndex, offsetBy: cursor - 1)
-                text.remove(at: index)
-                cursor -= 1
-            }
+            PasteCollapse.backspace(displayText: &displayText, cursor: &cursor, store: &store)
         case .delete:
-            if cursor < text.count {
-                let index = text.index(text.startIndex, offsetBy: cursor)
-                text.remove(at: index)
-            }
+            PasteCollapse.deleteForward(displayText: &displayText, cursor: &cursor, store: &store)
         case .left:
-            cursor = max(0, cursor - 1)
+            PasteCollapse.moveLeft(cursor: &cursor, in: displayText, store: store)
         case .right:
-            cursor = min(text.count, cursor + 1)
+            PasteCollapse.moveRight(cursor: &cursor, in: displayText, store: store)
         case .home:
             cursor = 0
         case .end:
-            cursor = text.count
+            cursor = displayText.count
         default:
             break
         }
@@ -137,20 +193,22 @@ extension NodeViewBuilder {
     ) -> Void {
         return { [weak node] frame, buffer in
             guard let node = node else { return }
-            let text = node[.getText]?() ?? ""
+            let rawDisplay = node[.displayText] ?? ""
+            let store = node[.pasteStore] ?? [:]
             let placeholder = node[.placeholder] ?? ""
-            let displayText: String
+            let shown: String
 
-            if text.isEmpty {
-                displayText = placeholder
+            if rawDisplay.isEmpty {
+                shown = placeholder
             } else if isSecure {
-                displayText = String(repeating: "\u{2022}", count: text.count)
+                let expanded = PasteCollapse.expand(displayText: rawDisplay, store: store)
+                shown = String(repeating: "\u{2022}", count: expanded.count)
             } else {
-                displayText = text
+                shown = PasteCollapse.visualString(displayText: rawDisplay, store: store)
             }
 
             var style: Style
-            if text.isEmpty {
+            if rawDisplay.isEmpty {
                 style = Style().resolved(
                     with: node.environment,
                     fallbackForeground: .brightBlack
@@ -161,7 +219,7 @@ extension NodeViewBuilder {
             }
 
             buffer.drawClipped(
-                displayText,
+                shown,
                 at: frame.origin,
                 maxWidth: frame.width,
                 style: style,

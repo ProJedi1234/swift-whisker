@@ -269,8 +269,10 @@ public final class Application {
         switch event {
         case .key(let keyEvent):
             return handleKey(keyEvent)
-        case .text(let text), .paste(let text):
-            return handleText(text)
+        case .text(let text):
+            return handleText(text, isPaste: false)
+        case .paste(let text):
+            return handleText(text, isPaste: true)
         case .resize(let size):
             // Relayout and rerender
             if let root = rootNode {
@@ -299,9 +301,11 @@ public final class Application {
         return false
     }
 
-    private func handleText(_ text: String) -> Bool {
+    private func handleText(_ text: String, isPaste: Bool) -> Bool {
         guard let focused = focusedNode else { return false }
-        if let handler = focused[.textInputHandler] {
+        if isPaste, let pasteHandler = focused[.pasteInputHandler] {
+            pasteHandler(text)
+        } else if let handler = focused[.textInputHandler] {
             handler(text)
         } else {
             for character in text {
