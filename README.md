@@ -178,9 +178,12 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full deep-dive.
 | `SelectList` | Vertical option list with arrow-key selection and a sliding window for long lists |
 
 Custom views can participate in key handling too: `.focusable()` adds any view
-to the focus ring, and `.onKeyPress { event in ... }` receives key events while
-the view (or a focused descendant) has focus — return `true` to consume a key,
-`false` to let default handling such as focus traversal proceed.
+to the focus ring, and `.onKeyPress { event in ... }` (composable with
+`.focusable()` in either order) receives the key events that the focused view
+or a focused descendant does not consume — text input goes to a focused
+field first, so a wrapped `TextField` only passes along keys it declines.
+Return `.handled` to consume a key, `.ignored` to let default handling such
+as focus traversal proceed.
 
 ## Roadmap
 

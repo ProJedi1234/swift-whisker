@@ -75,6 +75,33 @@ final class SelectListTests: XCTestCase {
         XCTAssertEqual(app.focusedIndex, 0, ".down at boundary must not fall back to focus traversal")
     }
 
+    func testWrapsMovesSelectionAcrossEnds() {
+        var selection = 0
+        let app = makeApp {
+            VStack {
+                SelectList(
+                    ["Alpha", "Bravo", "Charlie"],
+                    selection: Binding(get: { selection }, set: { selection = $0 }),
+                    wraps: true
+                )
+                Button("ok") {}
+            }
+        }
+
+        app.rebuild()
+        XCTAssertEqual(app.focusedIndex, 0)
+
+        // .up at the top wraps to the last option, consumed
+        XCTAssertTrue(app.handleKey(KeyEvent(key: .up)))
+        XCTAssertEqual(selection, 2, ".up at the top must wrap to the last option")
+        XCTAssertEqual(app.focusedIndex, 0, "Wrapped .up must not fall back to focus traversal")
+
+        // .down at the bottom wraps to the first option, consumed
+        XCTAssertTrue(app.handleKey(KeyEvent(key: .down)))
+        XCTAssertEqual(selection, 0, ".down at the bottom must wrap to the first option")
+        XCTAssertEqual(app.focusedIndex, 0)
+    }
+
     // MARK: - Highlight rendering
 
     func testSelectedRowRendersPointerAndInverseBold() {
@@ -172,6 +199,35 @@ final class SelectListTests: XCTestCase {
         XCTAssertFalse(backend.allText().contains("▼"))
     }
 
+    func testVisibleRowsBelowThreeNeverExceedsCap() {
+        let backend = TestBackend(size: Size(width: 30, height: 8))
+        var selection = 0
+        let app = makeApp(backend: backend) {
+            SelectList(
+                ["Alpha", "Bravo", "Charlie", "Delta"],
+                selection: Binding(get: { selection }, set: { selection = $0 }),
+                visibleRows: 2
+            )
+        }
+
+        // Indicators are dropped when they would push the list past visibleRows.
+        app.rebuild()
+        app.render()
+        XCTAssertEqual(backend.text(atLine: 0), "\u{276F} Alpha")
+        XCTAssertEqual(backend.text(atLine: 1), "Bravo")
+        XCTAssertEqual(backend.text(atLine: 2), "", "List must not exceed visibleRows even with overflow")
+        XCTAssertFalse(backend.allText().contains("▲"))
+        XCTAssertFalse(backend.allText().contains("▼"))
+
+        // The window still slides to keep the selection visible.
+        selection = 3
+        app.rebuild()
+        app.render()
+        XCTAssertEqual(backend.text(atLine: 0), "Charlie")
+        XCTAssertEqual(backend.text(atLine: 1), "\u{276F} Delta")
+        XCTAssertEqual(backend.text(atLine: 2), "")
+    }
+
     // MARK: - Shrinking options
 
     func testSelectionClampsWhenOptionsShrink() {
@@ -200,6 +256,40 @@ final class SelectListTests: XCTestCase {
         // Key handling starts from the clamped position
         XCTAssertTrue(app.handleKey(KeyEvent(key: .up)))
         XCTAssertEqual(selection, 1)
+    }
+
+    func testFocusStaysOnFieldWhenListLeavesRing() {
+        // The filter-narrowing pattern: a SelectList whose options empty out
+        // leaves the focus ring. Controls after it in DFS order must keep
+        // focus instead of inheriting the list's old ring index.
+        var options = ["Alpha", "Bravo"]
+        var selection = 0
+        var filter = ""
+        var pressed = false
+        let app = makeApp {
+            VStack {
+                SelectList(
+                    options,
+                    selection: Binding(get: { selection }, set: { selection = $0 })
+                )
+                TextField("filter", get: { filter }, set: { filter = $0 })
+                Button("submit") { pressed = true }
+            }
+        }
+
+        app.rebuild()
+        XCTAssertTrue(app.handleKey(KeyEvent(key: .tab)))
+        XCTAssertEqual(app.focusedIndex, 1, "Tab should land on the TextField")
+
+        options = []
+        app.rebuild()
+
+        XCTAssertEqual(app.focusedIndex, 0, "Focus should re-bind to the TextField's new index")
+        XCTAssertNotNil(app.focusedNode?[.textInputHandler], "The TextField should still be focused")
+
+        XCTAssertTrue(app.handleKey(KeyEvent(key: .char(" "))))
+        XCTAssertEqual(filter, " ", "Typed characters must reach the field")
+        XCTAssertFalse(pressed, "The Button must not receive the stray key")
     }
 
     // MARK: - Empty options

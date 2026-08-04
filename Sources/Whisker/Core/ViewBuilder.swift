@@ -229,18 +229,27 @@ final class NodeViewBuilder {
         modifier: any _KeyPressModifierProtocol,
         existing: Node?
     ) {
-        node[.keyHandler] = modifier._handler
+        let action = modifier._action
+        node[.keyHandler] = { action($0) == .handled }
         buildPassthroughChild(node, content: modifier._content, existing: existing)
     }
 
-    /// Build a passthrough node that joins the focus ring on behalf of its content.
+    /// Build a passthrough node that adjusts its content's focus-ring membership.
+    ///
+    /// Focusability is stamped on the *content's* node rather than this wrapper:
+    /// - Key dispatch bubbles upward from the focused node, so with focus on the
+    ///   content every `.onKeyPress` wrapper fires whether it was applied before
+    ///   or after `.focusable()` — the modifiers compose in either order.
+    /// - Wrapping an inherently focusable control (e.g. `Button`) doesn't create
+    ///   a second, duplicate focus stop, and `.focusable(false)` actually removes
+    ///   the wrapped view from the focus ring.
     private func buildFocusableModifierNode(
         _ node: Node,
         modifier: any _FocusableModifierProtocol,
         existing: Node?
     ) {
-        node.isFocusable = modifier._isFocusable
         buildPassthroughChild(node, content: modifier._content, existing: existing)
+        node.children.first?.isFocusable = modifier._isFocusable
     }
 
     /// Shared plumbing for invisible wrapper nodes: build the single child and

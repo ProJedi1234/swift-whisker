@@ -26,7 +26,14 @@ public extension View {
     /// Add this view to the focus ring so Tab and the arrow keys can move
     /// focus to it, like a built-in control.
     ///
-    /// Combine with ``onKeyPress(_:)`` to receive key events while focused:
+    /// `focusable(false)` removes an inherently focusable view (e.g. a
+    /// `Button`) from the focus ring, and `focusable()` on such a view does
+    /// not add a second focus stop. The modifier applies to the view it
+    /// directly wraps, not to focusable descendants nested deeper inside a
+    /// container.
+    ///
+    /// Combine with ``onKeyPress(action:)`` — in either order — to receive
+    /// key events while focused:
     ///
     ///     DetailPane()
     ///         .focusable()

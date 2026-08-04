@@ -7,7 +7,7 @@ final class KeyEventTests: XCTestCase {
     /// Records the keys seen by a `.onKeyPress` handler and controls its return value.
     private final class KeyRecorder {
         var keys: [Key] = []
-        var consumes = true
+        var result: KeyPressResult = .handled
     }
 
     private struct ProbeView: View {
@@ -38,7 +38,7 @@ final class KeyEventTests: XCTestCase {
                 .focusable()
                 .onKeyPress { event in
                     recorder.keys.append(event.key)
-                    return recorder.consumes
+                    return recorder.result
                 }
         }
 
@@ -54,15 +54,37 @@ final class KeyEventTests: XCTestCase {
         XCTAssertEqual(recorder.keys, [.up, .down, .escape, .enter])
     }
 
+    func testOnKeyPressBeforeFocusableAlsoCapturesKeys() {
+        // The reversed modifier order must behave identically — the pairing
+        // is order-independent, not a silent no-op.
+        let recorder = KeyRecorder()
+        let app = makeApp {
+            ProbeView()
+                .onKeyPress { event in
+                    recorder.keys.append(event.key)
+                    return recorder.result
+                }
+                .focusable()
+        }
+
+        app.rebuild()
+        XCTAssertNotNil(app.focusedNode, "Focusable composite should join the focus ring")
+
+        XCTAssertTrue(app.handleKey(KeyEvent(key: .up)))
+        XCTAssertTrue(app.handleKey(KeyEvent(key: .enter)))
+
+        XCTAssertEqual(recorder.keys, [.up, .enter], ".onKeyPress applied before .focusable() must still fire")
+    }
+
     func testUnconsumedEscapeIsDropped() {
         let recorder = KeyRecorder()
-        recorder.consumes = false
+        recorder.result = .ignored
         let app = makeApp {
             ProbeView()
                 .focusable()
                 .onKeyPress { event in
                     recorder.keys.append(event.key)
-                    return recorder.consumes
+                    return recorder.result
                 }
         }
 
@@ -74,11 +96,11 @@ final class KeyEventTests: XCTestCase {
         XCTAssertEqual(recorder.keys, [.escape], "Handler should still have been offered escape")
     }
 
-    // MARK: - (b) Returning false falls back to focus traversal
+    // MARK: - (b) Returning .ignored falls back to focus traversal
 
-    func testReturningFalseOnUpStillMovesFocus() {
+    func testReturningIgnoredOnUpStillMovesFocus() {
         let recorder = KeyRecorder()
-        recorder.consumes = false
+        recorder.result = .ignored
         var text = ""
         let app = makeApp {
             VStack {
@@ -87,7 +109,7 @@ final class KeyEventTests: XCTestCase {
                     .focusable()
                     .onKeyPress { event in
                         recorder.keys.append(event.key)
-                        return recorder.consumes
+                        return recorder.result
                     }
             }
         }
@@ -192,5 +214,66 @@ final class KeyEventTests: XCTestCase {
         app.rebuild()
         let ring = FocusManager.allFocusableNodes(root: app.rootNode)
         XCTAssertEqual(ring.count, 1, "focusable(false) should not join the focus ring")
+    }
+
+    func testFocusableOnControlAddsNoDuplicateStop() {
+        let app = makeApp {
+            VStack {
+                Button("ok") {}.focusable()
+                Button("cancel") {}
+            }
+        }
+
+        app.rebuild()
+        let ring = FocusManager.allFocusableNodes(root: app.rootNode)
+        XCTAssertEqual(ring.count, 2, ".focusable() on an already-focusable control must not add a second stop")
+    }
+
+    func testFocusableFalseRemovesControlFromRing() {
+        var text = ""
+        let app = makeApp {
+            VStack {
+                TextField("name", get: { text }, set: { text = $0 }).focusable(false)
+                Button("ok") {}
+            }
+        }
+
+        app.rebuild()
+        let ring = FocusManager.allFocusableNodes(root: app.rootNode)
+        XCTAssertEqual(ring.count, 1, ".focusable(false) must remove the wrapped control from the ring")
+        XCTAssertNotNil(app.focusedNode?[.action], "Only the Button should be focusable")
+    }
+
+    // MARK: - (e) Focus survives ring membership changes above it
+
+    func testFocusStaysOnSameNodeWhenEarlierRingEntryDisappears() {
+        var showFirst = true
+        var text = ""
+        var pressed = false
+        let app = makeApp {
+            VStack {
+                if showFirst {
+                    Button("first") {}
+                }
+                TextField("name", get: { text }, set: { text = $0 })
+                Button("submit") { pressed = true }
+            }
+        }
+
+        app.rebuild()
+        XCTAssertTrue(app.handleKey(KeyEvent(key: .tab)))
+        XCTAssertEqual(app.focusedIndex, 1, "Tab should land on the TextField")
+
+        // The Button above the field leaves the tree; focus must follow the
+        // field to its new position instead of sticking to the raw index.
+        showFirst = false
+        app.rebuild()
+
+        XCTAssertEqual(app.focusedIndex, 0, "Focus should re-bind to the TextField's new index")
+        XCTAssertNotNil(app.focusedNode?[.textInputHandler], "The TextField should still be focused")
+
+        XCTAssertTrue(app.handleKey(KeyEvent(key: .char(" "))))
+        XCTAssertEqual(text, " ", "Typed characters must reach the field")
+        XCTAssertFalse(pressed, "The Button must not receive the stray key")
     }
 }
