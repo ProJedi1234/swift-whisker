@@ -42,10 +42,10 @@ extension NodeViewBuilder {
 
     private func makeSegmentedControlKeyHandler(
         for segmented: SegmentedControl
-    ) -> (KeyEvent) -> Void {
+    ) -> (KeyEvent) -> Bool {
         return { (event: KeyEvent) in
             let options = segmented.options
-            guard !options.isEmpty else { return }
+            guard !options.isEmpty else { return false }
 
             let current = min(max(segmented.selection.wrappedValue, 0), options.count - 1)
             var next = current
@@ -60,13 +60,14 @@ extension NodeViewBuilder {
                     segmented.wraps && current == options.count - 1
                     ? 0 : min(options.count - 1, current + 1)
             default:
-                return
+                return false
             }
 
             if next != segmented.selection.wrappedValue {
                 segmented.selection.wrappedValue = next
                 Application.shared?.scheduleUpdate()
             }
+            return true
         }
     }
 

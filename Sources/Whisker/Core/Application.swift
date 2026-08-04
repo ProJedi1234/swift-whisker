@@ -284,21 +284,26 @@ public final class Application {
         }
     }
 
-    private func handleKey(_ event: KeyEvent) -> Bool {
-        if event.key == .tab || event.key == .up || event.key == .down {
+    func handleKey(_ event: KeyEvent) -> Bool {
+        switch event.key {
+        case .tab, .up, .down:
+            // Offer the key to the focused node first; only an unconsumed key
+            // falls back to focus traversal.
+            if dispatchKey(event, startingAt: focusedNode) { return true }
             if event.key == .up || (event.key == .tab && event.modifiers.contains(.shift)) {
                 FocusManager.moveFocusPrevious(root: rootNode, focusedIndex: &focusedIndex, focusedNode: &focusedNode)
             } else {
                 FocusManager.moveFocusNext(root: rootNode, focusedIndex: &focusedIndex, focusedNode: &focusedNode)
             }
             return true
-        }
-
-        if let focused = focusedNode {
-            deliverKeyToNode(focused, event: event)
+        case .escape:
+            // An unconsumed escape is dropped.
+            return dispatchKey(event, startingAt: focusedNode)
+        default:
+            guard let focused = focusedNode else { return false }
+            _ = dispatchKey(event, startingAt: focused)
             return true
         }
-        return false
     }
 
     private func handleText(_ text: String, isPaste: Bool) -> Bool {
@@ -309,16 +314,25 @@ public final class Application {
             handler(text)
         } else {
             for character in text {
-                deliverKeyToNode(focused, event: KeyEvent(key: .char(character)))
+                _ = dispatchKey(KeyEvent(key: .char(character)), startingAt: focused)
             }
         }
         return true
     }
 
-    private func deliverKeyToNode(_ node: Node, event: KeyEvent) {
-        if let handler = node[.keyHandler] {
-            handler(event)
+    /// Offer a key event to `node`'s handler, bubbling up through ancestors
+    /// until one consumes it. Bubbling is what lets a `.onKeyPress` wrapper
+    /// receive keys on behalf of a focused `.focusable()` view or a focused
+    /// descendant control. Returns `true` when some handler consumed the key.
+    private func dispatchKey(_ event: KeyEvent, startingAt node: Node?) -> Bool {
+        var current = node
+        while let candidate = current {
+            if let handler = candidate[.keyHandler], handler(event) {
+                return true
+            }
+            current = candidate.parent
         }
+        return false
     }
 
     private func millisecondsUntil(

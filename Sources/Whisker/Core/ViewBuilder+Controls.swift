@@ -99,24 +99,25 @@ extension NodeViewBuilder {
         setText(PasteCollapse.expand(displayText: displayText, store: store))
     }
 
-    private func makeInputFieldKeyHandler(for node: Node) -> (KeyEvent) -> Void {
+    private func makeInputFieldKeyHandler(for node: Node) -> (KeyEvent) -> Bool {
         return { [weak node] (event: KeyEvent) in
-            guard let node = node else { return }
+            guard let node = node else { return false }
             var displayText = node[.displayText] ?? ""
             var store = node[.pasteStore] ?? [:]
             var cursor = node[.cursorPosition] ?? displayText.count
-            NodeViewBuilder.applyKeyEdit(
+            guard NodeViewBuilder.applyKeyEdit(
                 event.key,
                 displayText: &displayText,
                 cursor: &cursor,
                 store: &store
-            )
+            ) else { return false }
 
             node[.displayText] = displayText
             node[.pasteStore] = store
             node[.cursorPosition] = cursor
             NodeViewBuilder.syncBinding(from: node)
             Application.shared?.scheduleUpdate()
+            return true
         }
     }
 
@@ -160,12 +161,14 @@ extension NodeViewBuilder {
         }
     }
 
+    /// Applies an editing key to the field's display buffer.
+    /// Returns `true` when the key is one the field acts on, `false` otherwise.
     private static func applyKeyEdit(
         _ key: Key,
         displayText: inout String,
         cursor: inout Int,
         store: inout [String: String]
-    ) {
+    ) -> Bool {
         cursor = min(max(0, cursor), displayText.count)
 
         switch key {
@@ -184,8 +187,9 @@ extension NodeViewBuilder {
         case .end:
             cursor = displayText.count
         default:
-            break
+            return false
         }
+        return true
     }
 
     private func makeInputFieldRenderClosure(for node: Node, isSecure: Bool) -> (
@@ -258,12 +262,14 @@ extension NodeViewBuilder {
         node[.label] = button.label
 
         node[.keyHandler] = { [weak node] (event: KeyEvent) in
-            guard let node = node else { return }
+            guard let node = node else { return false }
             if event.key == .enter || event.key == .char(" ") {
                 if let action = node[.action] {
                     action()
                 }
+                return true
             }
+            return false
         }
 
         node.render = { [weak node] frame, buffer in
@@ -301,7 +307,9 @@ extension NodeViewBuilder {
             if event.key == .enter || event.key == .char(" ") {
                 toggle.isOn.wrappedValue.toggle()
                 Application.shared?.scheduleUpdate()
+                return true
             }
+            return false
         }
 
         node.render = { [weak node] frame, buffer in
