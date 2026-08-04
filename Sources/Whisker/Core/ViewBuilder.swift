@@ -132,6 +132,12 @@ final class NodeViewBuilder {
         } else if let taskMod = view as? any _TaskModifierProtocol {
             buildTaskModifierNode(node, modifier: taskMod, existing: existing)
             return true
+        } else if let keyPress = view as? any _KeyPressModifierProtocol {
+            buildKeyPressModifierNode(node, modifier: keyPress, existing: existing)
+            return true
+        } else if let focusable = view as? any _FocusableModifierProtocol {
+            buildFocusableModifierNode(node, modifier: focusable, existing: existing)
+            return true
         } else if let vstack = view as? any _VStackProtocol {
             buildVStackNode(node, content: vstack._content, alignment: vstack._alignment, spacing: vstack._spacing, existing: existing)
             return true
@@ -212,6 +218,45 @@ final class NodeViewBuilder {
 
         node.persistentState[taskIDKey] = currentID
         node.persistentState[taskStartedKey] = true
+    }
+
+    /// Build a passthrough node that offers key events to a `.onKeyPress` handler.
+    /// Key events bubble from the focused node up through its ancestors, so the
+    /// handler fires when the wrapped view (e.g. one marked `.focusable()`) or
+    /// any focusable descendant has focus.
+    private func buildKeyPressModifierNode(
+        _ node: Node,
+        modifier: any _KeyPressModifierProtocol,
+        existing: Node?
+    ) {
+        node[.keyHandler] = modifier._handler
+        buildPassthroughChild(node, content: modifier._content, existing: existing)
+    }
+
+    /// Build a passthrough node that joins the focus ring on behalf of its content.
+    private func buildFocusableModifierNode(
+        _ node: Node,
+        modifier: any _FocusableModifierProtocol,
+        existing: Node?
+    ) {
+        node.isFocusable = modifier._isFocusable
+        buildPassthroughChild(node, content: modifier._content, existing: existing)
+    }
+
+    /// Shared plumbing for invisible wrapper nodes: build the single child and
+    /// adopt its size (same shape as EnvironmentModifier/TaskModifier layout).
+    private func buildPassthroughChild(_ node: Node, content: any View, existing: Node?) {
+        let existingChild = existing?.children.first
+        let childNode = buildNode(from: content, existing: existingChild)
+        node.addChild(childNode)
+
+        node.layout = { [weak node] proposal, _ in
+            guard let node = node, let firstChild = node.children.first else {
+                return (.zero, [])
+            }
+            let childLayout = LayoutChild(node: firstChild)
+            return (childLayout.sizeThatFits(proposal), [])
+        }
     }
 
     func applyLayout(_ node: Node, engine: any Layout) {
