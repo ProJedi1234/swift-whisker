@@ -342,6 +342,19 @@ final class SelectListTests: XCTestCase {
         XCTAssertEqual(submitted, 0, "A stale index is clamped into range")
     }
 
+    func testWideOptionsAreMeasuredInTerminalCells() {
+        // "猫猫" is two characters but four terminal cells, so a width taken
+        // from String.count would clip the row.
+        let selectList = SelectList(["ab", "\u{732B}\u{732B}"], selection: .constant(0))
+        let node = NodeViewBuilder().buildNode(from: selectList)
+
+        let (size, _) = node.layout!(
+            ProposedSize(width: .unconstrained, height: .unconstrained), node.children)
+
+        // Four cells for the widest option plus the two-column pointer gutter.
+        XCTAssertEqual(size.width, 6)
+    }
+
     func testOverflowMarkersAreDrawn() {
         let backend = TestBackend(size: Size(width: 30, height: 10))
         let options = (1...20).map { "option-\($0)" }

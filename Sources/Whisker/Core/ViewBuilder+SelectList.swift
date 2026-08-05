@@ -21,7 +21,9 @@ extension NodeViewBuilder {
 
         node.layout = { proposal, _ in
             let window = selectList.window()
-            let widest = selectList.options.reduce(0) { max($0, $1.count) }
+            let widest = selectList.options.reduce(0) {
+                max($0, terminalTextWidth($1, replacingControlCharacters: true))
+            }
             // Two columns for the pointer gutter, so rows line up whether or
             // not they are the selected one.
             let contentWidth = widest + 2
