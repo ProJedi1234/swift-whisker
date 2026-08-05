@@ -17,6 +17,9 @@ extension NodeViewBuilder {
         } else if let segmented = view as? SegmentedControl {
             buildSegmentedControlNode(node, segmented: segmented)
             return true
+        } else if let selectList = view as? SelectList {
+            buildSelectListNode(node, selectList: selectList)
+            return true
         }
         return false
     }

@@ -175,6 +175,11 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full deep-dive.
 | `TextField` | Single-line text input |
 | `SecureField` | Masked password input |
 | `Button` | Pressable control with label and action |
+| `SelectList` | Vertical option list: arrow keys move the selection, `onSubmit`/`onCancel` report enter and escape, and a sliding window keeps long lists within `visibleRows` |
+
+At either end of a `SelectList` an arrow key hands focus to the next control
+rather than doing nothing, so the list is never a keyboard trap — pass
+`wraps: true` to cycle within it instead.
 
 Custom views can participate in key handling too: `.focusable()` adds any view
 to the focus ring, and `.onKeyPress { event in ... }` (composable with
