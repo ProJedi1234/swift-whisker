@@ -176,6 +176,14 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full deep-dive.
 | `SecureField` | Masked password input |
 | `Button` | Pressable control with label and action |
 
+Custom views can participate in key handling too: `.focusable()` adds any view
+to the focus ring, and `.onKeyPress { event in ... }` (composable with
+`.focusable()` in either order) receives the key events that the focused view
+or a focused descendant does not consume — text input goes to a focused
+field first, so a wrapped `TextField` only passes along keys it declines.
+Return `.handled` to consume a key, `.ignored` to let default handling such
+as focus traversal proceed.
+
 ## Roadmap
 
 Whisker is at **v0.1.0**. The core architecture is in place. Here's what's next:

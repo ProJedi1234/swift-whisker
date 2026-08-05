@@ -132,6 +132,12 @@ final class NodeViewBuilder {
         } else if let taskMod = view as? any _TaskModifierProtocol {
             buildTaskModifierNode(node, modifier: taskMod, existing: existing)
             return true
+        } else if let keyPress = view as? any _KeyPressModifierProtocol {
+            buildKeyPressModifierNode(node, modifier: keyPress, existing: existing)
+            return true
+        } else if let focusable = view as? any _FocusableModifierProtocol {
+            buildFocusableModifierNode(node, modifier: focusable, existing: existing)
+            return true
         } else if let vstack = view as? any _VStackProtocol {
             buildVStackNode(node, content: vstack._content, alignment: vstack._alignment, spacing: vstack._spacing, existing: existing)
             return true
@@ -158,6 +164,7 @@ final class NodeViewBuilder {
         var environment = node.environment
         modifier._apply(to: &environment)
         node.environment = environment
+        node.isPassthrough = true
 
         let existingChild = existing?.children.first
         let childNode = buildNode(from: modifier._content, existing: existingChild)
@@ -173,6 +180,8 @@ final class NodeViewBuilder {
 
     /// Build a passthrough node that spawns or preserves an async `.task` for its content.
     private func buildTaskModifierNode(_ node: Node, modifier: any _TaskModifierProtocol, existing: Node?) {
+        node.isPassthrough = true
+
         // Build child content (pass through, same as EnvironmentModifier)
         let existingChild = existing?.children.first
         let childNode = buildNode(from: modifier._content, existing: existingChild)
@@ -212,6 +221,58 @@ final class NodeViewBuilder {
 
         node.persistentState[taskIDKey] = currentID
         node.persistentState[taskStartedKey] = true
+    }
+
+    /// Build a passthrough node that offers key events to a `.onKeyPress` handler.
+    /// Key events bubble from the focused node up through its ancestors, so the
+    /// handler fires when the wrapped view (e.g. one marked `.focusable()`) or
+    /// any focusable descendant has focus.
+    private func buildKeyPressModifierNode(
+        _ node: Node,
+        modifier: any _KeyPressModifierProtocol,
+        existing: Node?
+    ) {
+        let action = modifier._action
+        node[.keyHandler] = { action($0) == .handled }
+        buildPassthroughChild(node, content: modifier._content, existing: existing)
+    }
+
+    /// Build a passthrough node that adjusts its content's focus-ring membership.
+    ///
+    /// Focusability is stamped on the content's *effective focus target* — the
+    /// view underneath any intervening wrappers — rather than on this node:
+    /// - Key dispatch bubbles upward from the focused node, so with focus on the
+    ///   content every `.onKeyPress` wrapper fires whether it was applied before
+    ///   or after `.focusable()` — the modifiers compose in either order.
+    /// - Wrapping an inherently focusable control (e.g. `Button`) doesn't create
+    ///   a second, duplicate focus stop, and `.focusable(false)` actually removes
+    ///   the wrapped view from the focus ring, no matter how many passthrough
+    ///   wrappers sit between this modifier and the control.
+    private func buildFocusableModifierNode(
+        _ node: Node,
+        modifier: any _FocusableModifierProtocol,
+        existing: Node?
+    ) {
+        buildPassthroughChild(node, content: modifier._content, existing: existing)
+        node.children.first?.effectiveFocusTarget.isFocusable = modifier._isFocusable
+    }
+
+    /// Shared plumbing for invisible wrapper nodes: build the single child and
+    /// adopt its size (same shape as EnvironmentModifier/TaskModifier layout).
+    private func buildPassthroughChild(_ node: Node, content: any View, existing: Node?) {
+        node.isPassthrough = true
+
+        let existingChild = existing?.children.first
+        let childNode = buildNode(from: content, existing: existingChild)
+        node.addChild(childNode)
+
+        node.layout = { [weak node] proposal, _ in
+            guard let node = node, let firstChild = node.children.first else {
+                return (.zero, [])
+            }
+            let childLayout = LayoutChild(node: firstChild)
+            return (childLayout.sizeThatFits(proposal), [])
+        }
     }
 
     func applyLayout(_ node: Node, engine: any Layout) {
@@ -365,17 +426,22 @@ final class NodeViewBuilder {
             return extractViews(from: tupleView._tupleValue)
         }
 
+        // A lone view *is* the child list. Reflecting it here would walk its
+        // stored properties instead and return whatever view it wraps, quietly
+        // dropping the wrapper — a container holding a single modified view
+        // would lose that modifier (`VStack { Button("ok") {}.bold() }` renders
+        // unbolded, `.onKeyPress` never installs its handler). Multi-child
+        // content arrives as a tuple, which is not a View, so it still falls
+        // through to reflection below.
+        if let view = value as? any View {
+            return [view]
+        }
+
         var views: [any View] = []
         let mirror = Mirror(reflecting: value)
 
         for child in mirror.children {
             if let view = child.value as? any View {
-                views.append(view)
-            }
-        }
-
-        if views.isEmpty {
-            if let view = value as? any View {
                 views.append(view)
             }
         }

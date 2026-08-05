@@ -1,6 +1,8 @@
 /// Type-safe keys for node storage
 enum NodeStorageKey {
-    static let keyHandler = NodeKey<(KeyEvent) -> Void>("_keyHandler")
+    /// Returns `true` when the handler consumed the key; `false` lets default
+    /// handling (e.g. focus traversal) proceed.
+    static let keyHandler = NodeKey<(KeyEvent) -> Bool>("_keyHandler")
     static let textInputHandler = NodeKey<(String) -> Void>("_textInputHandler")
     static let pasteInputHandler = NodeKey<(String) -> Void>("_pasteInputHandler")
     static let getText = NodeKey<() -> String>("_getText")
@@ -28,7 +30,7 @@ extension Node {
 }
 
 extension NodeKey {
-    static var keyHandler: NodeKey<(KeyEvent) -> Void> { NodeStorageKey.keyHandler }
+    static var keyHandler: NodeKey<(KeyEvent) -> Bool> { NodeStorageKey.keyHandler }
     static var textInputHandler: NodeKey<(String) -> Void> { NodeStorageKey.textInputHandler }
     static var pasteInputHandler: NodeKey<(String) -> Void> { NodeStorageKey.pasteInputHandler }
     static var getText: NodeKey<() -> String> { NodeStorageKey.getText }
