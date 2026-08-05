@@ -175,7 +175,6 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full deep-dive.
 | `TextField` | Single-line text input |
 | `SecureField` | Masked password input |
 | `Button` | Pressable control with label and action |
-| `SelectList` | Vertical option list with arrow-key selection and a sliding window for long lists |
 
 Custom views can participate in key handling too: `.focusable()` adds any view
 to the focus ring, and `.onKeyPress { event in ... }` (composable with

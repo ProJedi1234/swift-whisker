@@ -24,19 +24,9 @@ struct FormView: View {
     @State var password = ""
     @State var confirmPassword = ""
     @State var planIndex = 0
-    @State var planFilter = ""
-    @State var favoriteIndex = 0
     @State var message = ""
     @State var messageColor: Color = .white
     @State var phase: Int = 0
-
-    /// The fuzzy-picker half of the demo: the "Favorite?" TextField narrows
-    /// this list, and the SelectList below it clamps its selection as the
-    /// options shrink.
-    var filteredPlans: [String] {
-        guard !planFilter.isEmpty else { return plans }
-        return plans.filter { $0.lowercased().contains(planFilter.lowercased()) }
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -74,16 +64,6 @@ struct FormView: View {
                     overflow: .wrap
                 )
                 .foregroundColor(.brightCyan)
-            }
-            HStack(spacing: 0) {
-                Text("? ").foregroundColor(.brightYellow)
-                Text("Favorite? ").bold()
-                Text("› ").foregroundColor(.brightBlack)
-                TextField("Type to filter plans", text: $planFilter)
-            }
-            HStack(spacing: 0) {
-                Text("  ")
-                SelectList(filteredPlans, selection: $favoriteIndex, visibleRows: 6)
             }
             if phase == 0 {
                 HStack(spacing: 0) {
