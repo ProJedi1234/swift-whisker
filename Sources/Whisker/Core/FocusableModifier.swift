@@ -28,8 +28,9 @@ public extension View {
     ///
     /// `focusable(false)` removes an inherently focusable view (e.g. a
     /// `Button`) from the focus ring, and `focusable()` on such a view does
-    /// not add a second focus stop. The modifier applies to the view it
-    /// directly wraps, not to focusable descendants nested deeper inside a
+    /// not add a second focus stop — both hold even when styling, `.task {}`
+    /// or `.onKeyPress {}` wrappers sit in between. The modifier applies to
+    /// the view it wraps, not to focusable descendants nested deeper inside a
     /// container.
     ///
     /// Combine with ``onKeyPress(action:)`` — in either order — to receive

@@ -27,6 +27,11 @@ public final class Node {
     var needsRebuild: Bool = true
     var isFocusable: Bool = false
     var isFocused: Bool = false
+
+    /// True for invisible single-child wrappers (`.bold()`, `.task {}`,
+    /// `.onKeyPress {}`, `.focusable()`) that adopt their child's size and
+    /// render nothing of their own.
+    var isPassthrough: Bool = false
     var render: ((Rect, inout RenderBuffer) -> Void)?
     var layout: ((ProposedSize, [Node]) -> (Size, [(Node, Rect)]))?
 
@@ -64,6 +69,20 @@ public final class Node {
             child.parent = nil
         }
         children.removeAll()
+    }
+
+    /// The node that `.focusable()` should act on: the first node at or below
+    /// this one that actually represents a view, skipping invisible wrappers.
+    ///
+    /// Focusability has to land on the same node the focus ring would otherwise
+    /// collect, or a control ends up with two focus stops (its own plus the
+    /// wrapper's) and `.focusable(false)` fails to remove it.
+    var effectiveFocusTarget: Node {
+        var node = self
+        while node.isPassthrough, node.children.count == 1 {
+            node = node.children[0]
+        }
+        return node
     }
 
     /// Find the root node

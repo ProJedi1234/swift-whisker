@@ -244,7 +244,173 @@ final class KeyEventTests: XCTestCase {
         XCTAssertNotNil(app.focusedNode?[.action], "Only the Button should be focusable")
     }
 
-    // MARK: - (e) Focus survives ring membership changes above it
+    func testFocusableThroughWrapperAddsNoDuplicateStop() {
+        // `.focusable()` applied *after* another modifier must still resolve to
+        // the control underneath, not stamp the invisible wrapper between them.
+        let app = makeApp {
+            VStack {
+                Button("ok") {}
+                    .onKeyPress { _ in .ignored }
+                    .focusable()
+                Button("cancel") {}
+            }
+        }
+
+        app.rebuild()
+        let ring = FocusManager.allFocusableNodes(root: app.rootNode)
+        XCTAssertEqual(
+            ring.count, 2,
+            ".focusable() reaching a control through a wrapper must not add a second stop")
+    }
+
+    func testFocusableFalseThroughWrapperRemovesControlFromRing() {
+        var text = ""
+        let app = makeApp {
+            VStack {
+                TextField("name", get: { text }, set: { text = $0 })
+                    .onKeyPress { _ in .ignored }
+                    .focusable(false)
+                Button("ok") {}
+            }
+        }
+
+        app.rebuild()
+        let ring = FocusManager.allFocusableNodes(root: app.rootNode)
+        XCTAssertEqual(
+            ring.count, 1,
+            ".focusable(false) must reach the control through a wrapper and remove it")
+    }
+
+    func testFocusableThroughEnvironmentModifierAddsNoDuplicateStop() {
+        // Styling modifiers are passthrough wrappers too.
+        let app = makeApp {
+            VStack {
+                Button("ok") {}.bold().focusable()
+                Button("cancel") {}
+            }
+        }
+
+        app.rebuild()
+        let ring = FocusManager.allFocusableNodes(root: app.rootNode)
+        XCTAssertEqual(ring.count, 2, ".focusable() through .bold() must not add a second stop")
+    }
+
+    // MARK: - (e) Multi-node routing
+
+    func testChildHandlerRunsBeforeAncestorAndHandledStopsBubbling() {
+        let inner = KeyRecorder()
+        let outer = KeyRecorder()
+        var order: [String] = []
+        let app = makeApp {
+            VStack {
+                ProbeView()
+                    .focusable()
+                    .onKeyPress { event in
+                        order.append("inner")
+                        inner.keys.append(event.key)
+                        return inner.result
+                    }
+            }
+            .onKeyPress { event in
+                order.append("outer")
+                outer.keys.append(event.key)
+                return outer.result
+            }
+        }
+
+        app.rebuild()
+        XCTAssertTrue(app.handleKey(KeyEvent(key: .enter)))
+
+        XCTAssertEqual(order, ["inner"], "The focused node's handler runs first")
+        XCTAssertEqual(outer.keys, [], ".handled must stop the event bubbling to the ancestor")
+    }
+
+    func testIgnoredChildBubblesToAncestorHandler() {
+        let inner = KeyRecorder()
+        inner.result = .ignored
+        let outer = KeyRecorder()
+        var order: [String] = []
+        let app = makeApp {
+            VStack {
+                ProbeView()
+                    .focusable()
+                    .onKeyPress { event in
+                        order.append("inner")
+                        inner.keys.append(event.key)
+                        return inner.result
+                    }
+            }
+            .onKeyPress { event in
+                order.append("outer")
+                outer.keys.append(event.key)
+                return outer.result
+            }
+        }
+
+        app.rebuild()
+        XCTAssertTrue(app.handleKey(KeyEvent(key: .enter)))
+
+        XCTAssertEqual(order, ["inner", "outer"], "An ignored key bubbles child-first to the ancestor")
+        XCTAssertEqual(outer.keys, [.enter])
+    }
+
+    func testAllIgnoredHandlersFallBackToTraversal() {
+        let inner = KeyRecorder()
+        inner.result = .ignored
+        let outer = KeyRecorder()
+        outer.result = .ignored
+        var text = ""
+        let app = makeApp {
+            VStack {
+                TextField("name", get: { text }, set: { text = $0 })
+                ProbeView()
+                    .focusable()
+                    .onKeyPress { event in
+                        inner.keys.append(event.key)
+                        return inner.result
+                    }
+            }
+            .onKeyPress { event in
+                outer.keys.append(event.key)
+                return outer.result
+            }
+        }
+
+        app.rebuild()
+        XCTAssertTrue(app.handleKey(KeyEvent(key: .tab)))
+        XCTAssertEqual(app.focusedIndex, 1, "Focus starts on the composite")
+
+        XCTAssertTrue(app.handleKey(KeyEvent(key: .up)))
+        XCTAssertEqual(inner.keys, [.up], "The composite's own handler sees only its own keys")
+        XCTAssertEqual(
+            outer.keys, [.tab, .up],
+            "The ancestor wraps the whole stack, so it is offered the TextField's tab too")
+        XCTAssertEqual(app.focusedIndex, 0, "All-ignored .up still falls back to focus traversal")
+    }
+
+    func testPrintableInputBypassesAncestorOnKeyPress() {
+        let ancestor = KeyRecorder()
+        var text = ""
+        let app = makeApp {
+            VStack {
+                TextField("name", get: { text }, set: { text = $0 })
+            }
+            .onKeyPress { event in
+                ancestor.keys.append(event.key)
+                return ancestor.result
+            }
+        }
+
+        app.rebuild()
+        XCTAssertTrue(app.handleKey(KeyEvent(key: .char("A"))))
+        XCTAssertTrue(app.handleKey(KeyEvent(key: .char("B"))))
+
+        XCTAssertEqual(text, "AB", "Printable input must reach the focused field")
+        XCTAssertEqual(
+            ancestor.keys, [], "A focused text field consumes printable keys before they bubble")
+    }
+
+    // MARK: - (f) Focus survives ring membership changes above it
 
     func testFocusStaysOnSameNodeWhenEarlierRingEntryDisappears() {
         var showFirst = true
