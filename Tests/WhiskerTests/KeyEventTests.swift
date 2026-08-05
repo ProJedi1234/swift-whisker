@@ -2,34 +2,10 @@ import XCTest
 
 @testable import Whisker
 
-final class KeyEventTests: XCTestCase {
+/// How key events are routed to handlers, and what falls back to default handling.
+final class KeyEventTests: KeyEventTestCase {
 
-    /// Records the keys seen by a `.onKeyPress` handler and controls its return value.
-    private final class KeyRecorder {
-        var keys: [Key] = []
-        var result: KeyPressResult = .handled
-    }
-
-    private struct ProbeView: View {
-        var body: some View {
-            Text("probe")
-        }
-    }
-
-    private func makeApp(
-        backend: TestBackend = TestBackend(size: Size(width: 40, height: 10)),
-        @ViewBuilder rootView: @escaping () -> some View
-    ) -> Application {
-        Application(mode: .fullscreen, backend: backend, rootView: rootView)
-    }
-
-    override func tearDown() {
-        Application.shared = nil
-        NodeContext.current = nil
-        super.tearDown()
-    }
-
-    // MARK: - (a) Focusable composite captures keys
+    // MARK: - Focusable composite captures keys
 
     func testFocusableCompositeOnKeyPressCapturesKeys() {
         let recorder = KeyRecorder()
@@ -96,7 +72,7 @@ final class KeyEventTests: XCTestCase {
         XCTAssertEqual(recorder.keys, [.escape], "Handler should still have been offered escape")
     }
 
-    // MARK: - (b) Returning .ignored falls back to focus traversal
+    // MARK: - Returning .ignored falls back to focus traversal
 
     func testReturningIgnoredOnUpStillMovesFocus() {
         let recorder = KeyRecorder()
@@ -128,7 +104,7 @@ final class KeyEventTests: XCTestCase {
             "Unconsumed .up should fall back to moving focus to the previous node")
     }
 
-    // MARK: - (c) TextField behavior is unchanged
+    // MARK: - TextField behavior is unchanged
 
     func testTextFieldStillReceivesCharsAndArrows() {
         var text = ""
@@ -172,130 +148,7 @@ final class KeyEventTests: XCTestCase {
         XCTAssertEqual(app.focusedIndex, 0, ".up should still traverse focus")
     }
 
-    // MARK: - (d) Tab traversal across a mixed focus ring
-
-    func testTabTraversalAcrossTextFieldAndFocusableComposite() {
-        var text = ""
-        let app = makeApp {
-            VStack {
-                TextField("name", get: { text }, set: { text = $0 })
-                ProbeView().focusable()
-                Button("ok") {}
-            }
-        }
-
-        app.rebuild()
-        let ring = FocusManager.allFocusableNodes(root: app.rootNode)
-        XCTAssertEqual(ring.count, 3, "TextField, focusable composite, and Button should all be in the ring")
-
-        XCTAssertTrue(app.focusedNode === ring[0])
-
-        XCTAssertTrue(app.handleKey(KeyEvent(key: .tab)))
-        XCTAssertTrue(app.focusedNode === ring[1], "Tab should reach the focusable composite")
-
-        XCTAssertTrue(app.handleKey(KeyEvent(key: .tab)))
-        XCTAssertTrue(app.focusedNode === ring[2])
-
-        XCTAssertTrue(app.handleKey(KeyEvent(key: .tab)))
-        XCTAssertTrue(app.focusedNode === ring[0], "Tab should wrap around the ring")
-
-        XCTAssertTrue(app.handleKey(KeyEvent(key: .tab, modifiers: .shift)))
-        XCTAssertTrue(app.focusedNode === ring[2], "Shift-tab should traverse backwards")
-    }
-
-    func testFocusableFalseStaysOutOfFocusRing() {
-        let app = makeApp {
-            VStack {
-                ProbeView().focusable(false)
-                Button("ok") {}
-            }
-        }
-
-        app.rebuild()
-        let ring = FocusManager.allFocusableNodes(root: app.rootNode)
-        XCTAssertEqual(ring.count, 1, "focusable(false) should not join the focus ring")
-    }
-
-    func testFocusableOnControlAddsNoDuplicateStop() {
-        let app = makeApp {
-            VStack {
-                Button("ok") {}.focusable()
-                Button("cancel") {}
-            }
-        }
-
-        app.rebuild()
-        let ring = FocusManager.allFocusableNodes(root: app.rootNode)
-        XCTAssertEqual(ring.count, 2, ".focusable() on an already-focusable control must not add a second stop")
-    }
-
-    func testFocusableFalseRemovesControlFromRing() {
-        var text = ""
-        let app = makeApp {
-            VStack {
-                TextField("name", get: { text }, set: { text = $0 }).focusable(false)
-                Button("ok") {}
-            }
-        }
-
-        app.rebuild()
-        let ring = FocusManager.allFocusableNodes(root: app.rootNode)
-        XCTAssertEqual(ring.count, 1, ".focusable(false) must remove the wrapped control from the ring")
-        XCTAssertNotNil(app.focusedNode?[.action], "Only the Button should be focusable")
-    }
-
-    func testFocusableThroughWrapperAddsNoDuplicateStop() {
-        // `.focusable()` applied *after* another modifier must still resolve to
-        // the control underneath, not stamp the invisible wrapper between them.
-        let app = makeApp {
-            VStack {
-                Button("ok") {}
-                    .onKeyPress { _ in .ignored }
-                    .focusable()
-                Button("cancel") {}
-            }
-        }
-
-        app.rebuild()
-        let ring = FocusManager.allFocusableNodes(root: app.rootNode)
-        XCTAssertEqual(
-            ring.count, 2,
-            ".focusable() reaching a control through a wrapper must not add a second stop")
-    }
-
-    func testFocusableFalseThroughWrapperRemovesControlFromRing() {
-        var text = ""
-        let app = makeApp {
-            VStack {
-                TextField("name", get: { text }, set: { text = $0 })
-                    .onKeyPress { _ in .ignored }
-                    .focusable(false)
-                Button("ok") {}
-            }
-        }
-
-        app.rebuild()
-        let ring = FocusManager.allFocusableNodes(root: app.rootNode)
-        XCTAssertEqual(
-            ring.count, 1,
-            ".focusable(false) must reach the control through a wrapper and remove it")
-    }
-
-    func testFocusableThroughEnvironmentModifierAddsNoDuplicateStop() {
-        // Styling modifiers are passthrough wrappers too.
-        let app = makeApp {
-            VStack {
-                Button("ok") {}.bold().focusable()
-                Button("cancel") {}
-            }
-        }
-
-        app.rebuild()
-        let ring = FocusManager.allFocusableNodes(root: app.rootNode)
-        XCTAssertEqual(ring.count, 2, ".focusable() through .bold() must not add a second stop")
-    }
-
-    // MARK: - (e) Multi-node routing
+    // MARK: - Multi-node routing
 
     func testChildHandlerRunsBeforeAncestorAndHandledStopsBubbling() {
         let inner = KeyRecorder()
@@ -410,36 +263,4 @@ final class KeyEventTests: XCTestCase {
             ancestor.keys, [], "A focused text field consumes printable keys before they bubble")
     }
 
-    // MARK: - (f) Focus survives ring membership changes above it
-
-    func testFocusStaysOnSameNodeWhenEarlierRingEntryDisappears() {
-        var showFirst = true
-        var text = ""
-        var pressed = false
-        let app = makeApp {
-            VStack {
-                if showFirst {
-                    Button("first") {}
-                }
-                TextField("name", get: { text }, set: { text = $0 })
-                Button("submit") { pressed = true }
-            }
-        }
-
-        app.rebuild()
-        XCTAssertTrue(app.handleKey(KeyEvent(key: .tab)))
-        XCTAssertEqual(app.focusedIndex, 1, "Tab should land on the TextField")
-
-        // The Button above the field leaves the tree; focus must follow the
-        // field to its new position instead of sticking to the raw index.
-        showFirst = false
-        app.rebuild()
-
-        XCTAssertEqual(app.focusedIndex, 0, "Focus should re-bind to the TextField's new index")
-        XCTAssertNotNil(app.focusedNode?[.textInputHandler], "The TextField should still be focused")
-
-        XCTAssertTrue(app.handleKey(KeyEvent(key: .char(" "))))
-        XCTAssertEqual(text, " ", "Typed characters must reach the field")
-        XCTAssertFalse(pressed, "The Button must not receive the stray key")
-    }
 }
