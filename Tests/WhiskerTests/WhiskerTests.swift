@@ -156,6 +156,35 @@ final class WhiskerTests: XCTestCase {
         XCTAssertNotNil(forEach)
     }
 
+    /// A container's only child used to be reflected rather than built, which
+    /// returned whatever view it wrapped and silently discarded the modifier.
+    func testSingleChildContainerKeepsItsModifierWrapper() {
+        let view = VStack {
+            Button("ok") {}.bold()
+        }
+
+        let root = NodeViewBuilder().buildNode(from: view)
+
+        var sawModifier = false
+        root.traverse { node in
+            if node.isPassthrough { sawModifier = true }
+        }
+        XCTAssertTrue(
+            sawModifier,
+            "A lone modified child must keep its modifier node, not be unwrapped to the bare view")
+    }
+
+    func testMultiChildContainerStillBuildsEveryChild() {
+        let view = VStack {
+            Button("ok") {}.bold()
+            Text("other")
+        }
+
+        let root = NodeViewBuilder().buildNode(from: view)
+
+        XCTAssertEqual(root.children.count, 2, "Both children should be built")
+    }
+
     func testEnvironmentStylesCascadeToText() {
         let view = VStack {
             Text("A")
