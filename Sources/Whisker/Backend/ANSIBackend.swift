@@ -8,8 +8,9 @@ import Darwin
 private func tcflag(_ v: Int32) -> UInt { UInt(bitPattern: Int(v)) }
 #endif
 
-/// ANSI terminal backend - writes escape sequences to stdout
+/// ANSI terminal backend - writes escape sequences to a terminal file handle
 public final class ANSIBackend: TerminalBackend, @unchecked Sendable {
+    private let output: FileHandle
     private var originalTermios: termios?
     private var outputBuffer = Data()
     private var rawModeEnabled = false
@@ -17,12 +18,24 @@ public final class ANSIBackend: TerminalBackend, @unchecked Sendable {
 
     public var renderMode: RenderMode = .fullscreen
 
-    public init() {}
+    /// Create a backend that renders to `output`.
+    ///
+    /// Defaults to stdout. Pass `.standardError` when the program's stdout is a
+    /// contract another process reads — a CLI whose output is captured with
+    /// `result=$(tool ...)` cannot also paint frames into it. Input is still read
+    /// from stdin either way; only the drawing moves.
+    public init(output: FileHandle = .standardOutput) {
+        self.output = output
+    }
 
     public var size: Size {
         var ws = winsize()
-        if ioctl(STDOUT_FILENO, UInt(TIOCGWINSZ), &ws) == 0 {
-            return Size(width: Int(ws.ws_col), height: Int(ws.ws_row))
+        // Ask the handle being drawn to, then stdin: when output is redirected, the
+        // terminal is still on the descriptor the keystrokes arrive on.
+        for fd in [output.fileDescriptor, STDIN_FILENO] {
+            if ioctl(fd, UInt(TIOCGWINSZ), &ws) == 0 {
+                return Size(width: Int(ws.ws_col), height: Int(ws.ws_row))
+            }
         }
         return Size(width: 80, height: 24)  // Fallback
     }
@@ -55,7 +68,7 @@ public final class ANSIBackend: TerminalBackend, @unchecked Sendable {
 
     public func flush() {
         guard !outputBuffer.isEmpty else { return }
-        FileHandle.standardOutput.write(outputBuffer)
+        output.write(outputBuffer)
         outputBuffer.removeAll(keepingCapacity: true)
     }
 
