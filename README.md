@@ -31,6 +31,7 @@ try app.run()
 - **Styling** — Colors (ANSI, 256, TrueColor), bold, italic, underline, strikethrough
 - **Focus navigation** — Tab, Shift+Tab, and arrow key support out of the box
 - **Two render modes** — Fullscreen (alternate buffer) or inline (lives in scrollback)
+- **Choosable output stream** — Render to stderr so a CLI's stdout stays a machine-readable contract
 - **Cross-platform** — macOS and Linux
 - **Testable** — Built-in `TestBackend` for unit testing views without a real terminal
 
@@ -136,6 +137,18 @@ let app = Application(mode: .inline) {
 }
 
 try app.run()
+```
+
+## Rendering Somewhere Other Than stdout
+
+A CLI whose stdout is captured — `url=$(mytool publish page.html)` — cannot also paint
+frames into it. Point the backend at stderr instead; input still comes from stdin, only
+the drawing moves:
+
+```swift
+let app = Application(mode: .inline, backend: ANSIBackend(output: .standardError)) {
+    ...
+}
 ```
 
 ## Architecture
