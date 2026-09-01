@@ -1,24 +1,15 @@
 name: CI
 
+# Runs on every push to main and every pull request, with no path filtering.
+# This check is required by branch protection, and a required check that a path
+# filter skips is never reported at all — which leaves the PR blocked forever,
+# with nothing the author can do to satisfy it. Paying for a few redundant runs
+# on docs-only changes is the cheaper side of that trade.
 on:
   pull_request:
-    paths:
-      - "Sources/**"
-      - "Tests/**"
-      - "Package.swift"
-      - "Package.resolved"
-      - ".swiftlint.yml"
-      - ".github/workflows/ci.yml"
   push:
     branches:
       - "main"
-    paths:
-      - "Sources/**"
-      - "Tests/**"
-      - "Package.swift"
-      - "Package.resolved"
-      - ".swiftlint.yml"
-      - ".github/workflows/ci.yml"
   workflow_dispatch:
 
 concurrency:
